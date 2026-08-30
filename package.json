@@ -1,0 +1,19 @@
+{
+  "name": "mdview",
+  "module": "src/main.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "^1.4.0"
+  },
+  "peerDependencies": {
+    "typescript": "^7"
+  },
+  "dependencies": {
+    "@earendil-works/pi-tui": "^0.84.4"
+  },
+  "version": "0.1.0",
+  "bin": {
+    "mdview": "./src/main.ts"
+  }
+}
