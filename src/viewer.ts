@@ -10,6 +10,7 @@ import {
 import { markdownTheme } from "./theme";
 
 export type ViewportTui = TUI & {
+  setFocus: (c: import("@earendil-works/pi-tui").Component | null) => void;
   setLayoutRoot: (c: Component | undefined) => void;
   scrollBy: (n: number) => void;
   scrollToTop: () => void;

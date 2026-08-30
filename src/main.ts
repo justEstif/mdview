@@ -106,6 +106,7 @@ Usage:
     }
     viewer = new Viewer({ tui, state, onQuit: quit, onOpenFile: showPicker });
     tui.setLayoutRoot(viewer);
+    tui.setFocus(viewer);
     tui.scrollToTop();
     tui.requestRender();
   };
@@ -122,6 +123,7 @@ Usage:
       onCancel: () => (viewer ? showViewer() : quit()),
     });
     tui.setLayoutRoot(picker);
+    tui.setFocus(picker);
     tui.scrollToTop();
     tui.requestRender();
   };
