@@ -10,7 +10,8 @@
     "typescript": "^7"
   },
   "dependencies": {
-    "@earendil-works/pi-tui": "^0.84.4"
+    "@earendil-works/pi-tui": "^0.84.4",
+    "grok-mermaid": "^0.2.3"
   },
   "version": "0.1.0",
   "bin": {
