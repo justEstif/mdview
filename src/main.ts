@@ -10,6 +10,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { Viewer, asViewport, type ViewerState } from "./viewer";
 import { FilePicker } from "./picker";
+import { loadConfig } from "./config";
 
 const MD_EXT = /\.(md|markdown|mdx)$/i;
 
@@ -54,6 +55,7 @@ Usage:
 
   const terminal = new ProcessTerminal();
   const tui = asViewport(new TuiAltScreen(terminal));
+  const cfg = loadConfig();
 
   const quit = () => tui.stop();
 
@@ -104,8 +106,8 @@ Usage:
       const idx = state.files.indexOf(startFile);
       if (idx >= 0) state.index = idx;
     }
-    viewer = new Viewer({ tui, state, onQuit: quit, onOpenFile: showPicker });
-    tui.setLayoutRoot(viewer);
+    viewer = new Viewer({ tui, state, cfg, onQuit: quit, onOpenFile: showPicker });
+    tui.setLayoutRoot(viewer.layoutRoot);
     tui.setFocus(viewer);
     tui.scrollToTop();
     tui.requestRender();
