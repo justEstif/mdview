@@ -1,4 +1,5 @@
 import type { MarkdownTheme } from "@earendil-works/pi-tui";
+import { render, toAnsi, DEFAULT_THEME } from "grok-mermaid";
 
 // ANSI 256-color markdown theme (works on light and dark terminals)
 const fg = (code: number) => (s: string) => `\x1b[38;5;${code}m${s}\x1b[39m`;
@@ -19,4 +20,12 @@ export const markdownTheme: MarkdownTheme = {
   italic: style("3"),
   strikethrough: style("9"),
   underline: style("4"),
+  // Render mermaid blocks as Unicode box-drawing diagrams (same approach as pi).
+  // Unsupported/invalid diagrams fall back to pi-tui's default code block.
+  highlightCode: (code: string, lang?: string): string[] => {
+    if (lang !== "mermaid") return code.split("\n").map(markdownTheme.codeBlock);
+    const art = render(code);
+    if (!art) return code.split("\n").map(markdownTheme.codeBlock);
+    return toAnsi(art, DEFAULT_THEME);
+  },
 };
