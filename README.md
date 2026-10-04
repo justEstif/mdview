@@ -7,18 +7,35 @@ A lean, keyboard-driven alternative to [glow](https://github.com/charmbracelet/g
 ## Usage
 
 ```sh
-bun run src/main.ts file.md        # view a file
-bun run src/main.ts dir/           # browse markdown files in a directory
-cat README.md | bun run src/main.ts # read from stdin
-bun run src/main.ts                # no args in a TTY: browse cwd
+mdview README.md     # view a file
+mdview docs/         # browse a directory (fuzzy picker)
+cat notes.md | mdview  # read from stdin
+mdview               # no args in a TTY: browse cwd
 ```
 
-Install as a CLI (Bun puts it on your PATH):
+Install from a release binary (linux/darwin, x64/arm64) or from source with Bun:
 
 ```sh
 bun install -g .
-mdview README.md
 ```
+
+## mdview vs glow
+
+|                          | mdview                      | glow                          |
+| ------------------------ | --------------------------- | ----------------------------- |
+| Runtime                  | Bun (single-file compile)   | Go binary                     |
+| Size                     | ~1k LoC, no styling deps    | large, bubbles/charm stack    |
+| Images in terminal       | kitty/iterm2 inline         | none                          |
+| Mermaid diagrams         | rendered as box-drawing art | not rendered                  |
+| File picker              | built-in fuzzy filter       | via `glow` + fzf manually     |
+| Keymap reference         | `?` overlay, configurable   | none                          |
+| Config format            | JSON5 with comments         | YAML                          |
+| Word wrap / paging       | pi-tui alt screen           | gum/style                     |
+| Themes                   | ANSI 256, palette overrides | built-in + custom styles      |
+
+Being lean is the point: mdview is a viewer, not a render farm. glow still
+wins on Word-compatible file discovery (it walks git repos, cloud sources)
+and mature theming.
 
 ## Keys
 
@@ -66,17 +83,17 @@ Standalone image lines are rendered inline via the terminal's graphics protocol
 
 ## Configuration
 
-`~/.config/mdview/config.json` (all optional):
+`~/.config/mdview/config.json` — JSON5, so comments and unquoted keys work (all keys optional, defaults in [`src/config.default.json`](src/config.default.json)):
 
-```json
+```json5
 {
-  "maxWidth": 100,
-  "center": true,
-  "paddingX": 1,
-  "paddingY": 1,
+  // "maxWidth": 100,
+  // "center": true,
+  // "paddingX": 1,
+  // "paddingY": 1,
   "statusBar": true,
   "pickerPosition": "top",
-  "helpPosition": "bottomRight"
+  "helpPosition": "bottomRight",
 }
 ```
 
@@ -86,8 +103,8 @@ Standalone image lines are rendered inline via the terminal's graphics protocol
 
 ## Status
 
-Lean core (v0.1.0): files, directory browsing, stdin, mouse scrolling and
-selection from pi-tui's alt screen, pinned status bar with scroll position.
+v0.2.0: files, directory browsing with fuzzy picker, stdin, inline images,
+mermaid rendering, pinned status bar, `?` keymap overlay, JSON5 config.
 
-Ideas for later: GitHub URL fetching, TOC jump (`t`), image protocol support,
-light/dark theme detection via OSC 11.
+Ideas for later: GitHub URL fetching, TOC jump (`t`), light/dark theme
+detection via OSC 11, `imageMaxWidthCells` config.
