@@ -1,15 +1,19 @@
+import { dirname, resolve } from "node:path";
+import { readFileSync } from "node:fs";
 import {
+  Image,
   Key,
   Markdown,
   ScrollView,
   VStack,
+  getCapabilities,
   matchesKey,
   truncateToWidth,
-  visibleWidth,
   type Component,
   type TUI,
 } from "@earendil-works/pi-tui";
 import { markdownTheme } from "./theme";
+import { box, overlayAt, ui, visibleWidth, type OverlayPosition } from "./ui";
 import type { MdviewConfig } from "./config";
 
 export type ViewportTui = TUI & {
@@ -31,17 +35,88 @@ export interface ViewerState {
   contents: Map<string, string>;
 }
 
-/** Scrollable markdown body. Rendered inside the layout's primary ScrollView. */
+/** A standalone image line: `![alt](path "title")` */
+const IMG_LINE = /^\s*!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)\s*$/;
+
+const MIME_BY_EXT: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  bmp: "image/bmp",
+  svg: "image/svg+xml",
+};
+
+type Segment =
+  | { type: "md"; text: string; component: Markdown }
+  | { type: "img"; component: Image | Markdown };
+
+/** Scrollable markdown body with inline image support (kitty/iterm2).
+ *  Falls back to plain markdown (alt text link) when the terminal can't show
+ *  images or the file can't be read. */
 class MarkdownBody implements Component {
+  private segments: Segment[] = [];
+
   constructor(
-    private readonly markdown: Markdown,
+    text: string,
     private readonly cfg: MdviewConfig,
-  ) {}
+    /** Directory to resolve relative image paths against */
+    private readonly baseDir: string,
+  ) {
+    this.setText(text);
+  }
+
+  setText(text: string): void {
+    this.segments = [];
+    const caps = getCapabilities();
+    const lines = text.split("\n");
+    let buf: string[] = [];
+    const flush = () => {
+      if (buf.length === 0) return;
+      this.segments.push({ type: "md", text: buf.join("\n"), component: this.makeMarkdown(buf.join("\n")) });
+      buf = [];
+    };
+    for (const line of lines) {
+      const m = line.match(IMG_LINE);
+      if (m && caps.images && !m[2]!.startsWith("http")) {
+        flush();
+        this.segments.push({ type: "img", component: this.makeImage(m[1] ?? "", m[2]!) ?? this.makeMarkdown(line) });
+      } else {
+        buf.push(line);
+      }
+    }
+    flush();
+  }
+
+  private makeMarkdown(text: string): Markdown {
+    return new Markdown(text, this.cfg.paddingX ?? 1, this.cfg.paddingY ?? 1, markdownTheme);
+  }
+
+  /** Returns undefined when the image can't be loaded. */
+  private makeImage(alt: string, src: string): Image | undefined {
+    const full = resolve(this.baseDir, src);
+    let data: Buffer;
+    try {
+      data = readFileSync(full);
+    } catch {
+      return undefined;
+    }
+    const ext = full.slice(full.lastIndexOf(".") + 1).toLowerCase();
+    const mimeType = MIME_BY_EXT[ext];
+    if (!mimeType) return undefined;
+    return new Image(data.toString("base64"), mimeType, { fallbackColor: ui.dim }, {
+      filename: alt || src,
+    });
+  }
 
   render(width: number): string[] {
     const contentWidth =
       this.cfg.maxWidth !== undefined ? Math.max(1, Math.min(width, this.cfg.maxWidth)) : width;
-    const lines = this.markdown.render(contentWidth);
+    const lines: string[] = [];
+    for (const seg of this.segments) {
+      lines.push(...seg.component.render(contentWidth));
+    }
     if (contentWidth < width && this.cfg.center !== false) {
       const pad = Math.floor((width - contentWidth) / 2);
       return lines.map((line) => " ".repeat(pad) + line);
@@ -50,7 +125,7 @@ class MarkdownBody implements Component {
   }
 
   invalidate(): void {
-    this.markdown.invalidate();
+    for (const seg of this.segments) seg.component.invalidate();
   }
 }
 
@@ -87,41 +162,53 @@ class StatusBar implements Component {
   invalidate(): void {}
 }
 
-/** Full-screen keybind help, toggled with `?`. */
-class HelpOverlay implements Component {
-  private entries: [string, string][] = [
-    ["j / k / arrows / wheel", "scroll one line"],
-    ["d / u", "scroll 10 lines"],
-    ["space", "scroll 20 lines"],
-    ["gg / G", "jump to top / bottom"],
-    ["h / l", "previous / next file"],
-    ["n / p", "next / previous file"],
-    ["o", "open file picker"],
-    ["/", "search"],
-    ["?", "toggle this help"],
-    ["q / Esc / Ctrl+C", "quit"],
+/** Compact keybind help box, overlaid bottom-right (mini.clue style). */
+class HelpOverlay {
+  private groups: [string, [string, string][]][] = [
+    ["navigate", [
+      ["j/k ↑↓", "scroll line"],
+      ["d/u", "scroll 10"],
+      ["space", "scroll 20"],
+      ["gg/G", "top / bottom"],
+    ]],
+    ["files", [
+      ["h/l  n/p", "prev / next file"],
+      ["o", "file picker"],
+      ["/", "search"],
+    ]],
+    ["quit", [
+      ["q  Esc  ⌃C", "quit"],
+    ]],
   ];
 
-  render(width: number): string[] {
-    const title = fgHelp(75)(" mdview — keybinds ");
-    const lines = [title, ""];
-    const keyW = Math.max(...this.entries.map(([k]) => visibleWidth(k)));
-    for (const [key, desc] of this.entries) {
-      const pad = " ".repeat(keyW - visibleWidth(key));
-      lines.push(`  ${fgHelp(110)(key + pad)}  ${desc}`);
+  render(): string[] {
+    const keyW = Math.max(
+      ...this.groups.flatMap(([, es]) => es.map(([k]) => k.length)),
+    );
+    const labelW = Math.max(
+      ...this.groups.flatMap(([, es]) => es.map(([, d]) => d.length)),
+    );
+    const rows: string[] = [];
+    for (const [group, entries] of this.groups) {
+      rows.push(` ${ui.accent(group)}`);
+      for (const [key, desc] of entries) {
+        rows.push(` ${ui.fg(110)(key.padEnd(keyW))}   ${desc}`);
+      }
     }
-    lines.push("", fgHelp(245)(" press any key to close "));
-    return lines;
+    return box(rows);
   }
 
-  invalidate(): void {}
-}
+  get height(): number {
+    return this.render().length;
+  }
 
-const fgHelp = (code: number) => (s: string) => `\x1b[38;5;${code}m${s}\x1b[39m`;
+  get width(): number {
+    return visibleWidth(this.render()[0] ?? "");
+  }
+}
 
 export class Viewer implements Component {
   private state: ViewerState;
-  private markdown: Markdown;
   private body: MarkdownBody;
   private scrollView: ScrollView;
   private root: VStack;
@@ -145,13 +232,7 @@ export class Viewer implements Component {
     this.cfg = opts.cfg;
     this.onQuit = opts.onQuit;
     this.onOpenFile = opts.onOpenFile;
-    this.markdown = new Markdown(
-      this.currentContent(),
-      this.cfg.paddingX ?? 1,
-      this.cfg.paddingY ?? 1,
-      markdownTheme,
-    );
-    this.body = new MarkdownBody(this.markdown, this.cfg);
+    this.body = new MarkdownBody(this.currentContent(), this.cfg, this.currentBaseDir());
     // The primary ScrollView is what TuiAltScreen.scrollBy() actually scrolls.
     this.scrollView = new ScrollView(this.body, { primary: true, follow: "none" });
     const status = new StatusBar(this.state, () => ({
@@ -183,6 +264,12 @@ export class Viewer implements Component {
     return this.state.contents.get(this.state.files[this.state.index]!) ?? "";
   }
 
+  /** Directory of the current file, for resolving relative image paths. */
+  private currentBaseDir(): string {
+    const f = this.state.files[this.state.index]!;
+    return f === "(stdin)" ? process.cwd() : dirname(f);
+  }
+
   get layoutRoot(): Component {
     return this.root;
   }
@@ -190,7 +277,7 @@ export class Viewer implements Component {
   showFile(index: number): void {
     if (index < 0 || index >= this.state.files.length) return;
     this.state.index = index;
-    this.markdown.setText(this.currentContent());
+    this.body.setText(this.currentContent());
     this.scrollView.scrollToStart();
     this.tui.requestRender();
   }
@@ -208,11 +295,8 @@ export class Viewer implements Component {
 
     if (this.showHelp) {
       this.showHelp = false;
-      this.tui.setLayoutRoot(this.root);
-      if (data !== "?") {
-        this.tui.requestRender();
-        return;
-      }
+      this.tui.requestRender();
+      return;
     }
 
     if (this.pendingG) {
@@ -236,15 +320,10 @@ export class Viewer implements Component {
     else if (data === "n") this.nextFile();
     else if (data === "p") this.prevFile();
     else if (data === "o") this.onOpenFile(this.state.files[this.state.index]!);
-    else if (data === "?") {
-      this.showHelp = !this.showHelp;
-      this.tui.setLayoutRoot(this.showHelp ? this.help : this.root);
-    }
+    else if (data === "?") this.showHelp = !this.showHelp;
     else if (data === "q" || matchesKey(data, "ctrl+c") || matchesKey(data, "esc")) {
-      if (this.showHelp) {
-        this.showHelp = false;
-        this.tui.setLayoutRoot(this.root);
-      } else this.quitNow();
+      if (this.showHelp) this.showHelp = false;
+      else this.quitNow();
     }
     else return;
 
@@ -254,11 +333,15 @@ export class Viewer implements Component {
   render(width: number): string[] {
     const lines = this.body.render(width);
     this.lastContentHeight = lines.length;
-    // Status bar renders itself as part of the VStack root.
-    return this.root.render(width);
+    const out = this.root.render(width);
+    if (this.showHelp) {
+      const pos: OverlayPosition = this.cfg.helpPosition ?? "bottomRight";
+      return overlayAt(out, this.help.render(), pos, this.cfg.statusBar === false ? 0 : 1);
+    }
+    return out;
   }
 
   invalidate(): void {
-    this.markdown.invalidate();
+    this.body.invalidate();
   }
 }

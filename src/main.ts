@@ -11,6 +11,7 @@ import {
 import { Viewer, asViewport, type ViewerState } from "./viewer";
 import { FilePicker } from "./picker";
 import { loadConfig } from "./config";
+import { applyPalette } from "./ui";
 
 const MD_EXT = /\.(md|markdown|mdx)$/i;
 
@@ -55,7 +56,8 @@ Usage:
 
   const terminal = new ProcessTerminal();
   const tui = asViewport(new TuiAltScreen(terminal));
-  const cfg = loadConfig();
+  const cfg = await loadConfig();
+  applyPalette(cfg);
 
   const quit = () => tui.stop();
 
@@ -121,6 +123,7 @@ Usage:
     const picker = new FilePicker({
       tui,
       files: items,
+      position: cfg.pickerPosition,
       onPick: (value) => showViewer(value),
       onCancel: () => (viewer ? showViewer() : quit()),
     });

@@ -46,7 +46,23 @@ flowchart TD
     F --> G
     G --> H[MarkdownBody - ScrollView, primary]
     G --> I[StatusBar - pinned]
+    H --> J{image line?}
+    J -- yes, kitty/iterm2 --> K[Image component]
+    J -- no/fallback --> L[Markdown component]
 ```
+
+## Images
+
+Standalone image lines are rendered inline via the terminal's graphics protocol
+(kitty graphics or iTerm2, auto-detected — Ghostty, kitty, WezTerm, Warp, etc.):
+
+```markdown
+![alt text](path/to/image.png)
+```
+
+- Paths resolve relative to the markdown file.
+- Supports png, jpg, gif, webp, bmp, svg.
+- Terminals without graphics support (or missing files) fall back to the alt text.
 
 ## Configuration
 
@@ -58,9 +74,15 @@ flowchart TD
   "center": true,
   "paddingX": 1,
   "paddingY": 1,
-  "statusBar": true
+  "statusBar": true,
+  "pickerPosition": "top",
+  "helpPosition": "bottomRight"
 }
 ```
+
+- `pickerPosition`: `"top"` or `"center"` — vertical placement of the file picker.
+- `helpPosition`: `"topRight"`, `"bottomRight"`, `"bottom"`, or `"center"` — placement of the `?` keymap box.
+- `accentColor` / `dimColor`: ANSI 256 codes overriding the picker/help palette (e.g. `75`, `245`).
 
 ## Status
 
