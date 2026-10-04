@@ -1,5 +1,4 @@
 import { styleText } from "node:util";
-import { truncateToWidth } from "@earendil-works/pi-tui";
 
 /** Shared mdview palette + box drawing. One place for all UI styling. */
 
@@ -34,58 +33,4 @@ export function box(rows: string[]): string[] {
   const bottom = ui.border("└" + "─".repeat(w) + "┘");
   const middle = rows.map((r) => ui.border("│") + r + " ".repeat(w - visibleWidth(r)) + ui.border("│"));
   return [top, ...middle, bottom];
-}
-
-export type OverlayPosition = "topRight" | "bottomRight" | "bottom" | "center";
-
-/** Overlay `boxLines` onto rendered screen lines at `position`.
- *  `reserveBottom` lines at the bottom (e.g. status bar) are kept visible. */
-export function overlayAt(
-  lines: string[],
-  boxLines: string[],
-  position: OverlayPosition,
-  reserveBottom = 0,
-): string[] {
-  const height = lines.length;
-  const boxH = boxLines.length;
-  const boxW = visibleWidth(boxLines[0] ?? "");
-
-  let startRow: number;
-  let leftPad: (base: string) => string;
-  const cutLeft = (base: string) => {
-    const target = Math.max(0, visibleWidth(base) - boxW);
-    return truncateToWidth(base, target);
-  };
-  const centerBase = (base: string) => {
-    const w = visibleWidth(base);
-    const pad = Math.max(0, Math.floor((w - boxW) / 2));
-    return truncateToWidth(base, pad) + " ".repeat(Math.max(0, pad - w));
-  };
-
-  switch (position) {
-    case "topRight":
-      startRow = 0;
-      leftPad = cutLeft;
-      break;
-    case "bottomRight":
-      startRow = Math.max(0, height - reserveBottom - boxH);
-      leftPad = cutLeft;
-      break;
-    case "bottom":
-      startRow = Math.max(0, height - reserveBottom - boxH);
-      leftPad = centerBase;
-      break;
-    case "center":
-      startRow = Math.max(0, Math.floor((height - boxH) / 2));
-      leftPad = centerBase;
-      break;
-  }
-
-  const out = [...lines];
-  for (let i = 0; i < boxH; i++) {
-    const row = startRow + i;
-    if (row < 0 || row >= height) continue;
-    out[row] = leftPad(out[row]!) + boxLines[i]!;
-  }
-  return out;
 }

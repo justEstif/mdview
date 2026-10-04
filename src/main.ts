@@ -5,6 +5,7 @@ import {
   ProcessTerminal,
   TuiAltScreen,
   type Component,
+  type OverlayOptions,
   type SelectItem,
   type TUI,
 } from "@earendil-works/pi-tui";
@@ -56,6 +57,17 @@ Usage:
 
   const terminal = new ProcessTerminal();
   const tui = asViewport(new TuiAltScreen(terminal));
+
+  // pi-tui hardcodes the search overlay to top-right; show it bottom-left
+  // next to the help box instead. Detection is by component class since
+  // openSearch() passes no distinguishing options.
+  const origShowOverlay = tui.showOverlay.bind(tui);
+  tui.showOverlay = (component: Component, options?: OverlayOptions) => {
+    const isSearchBar = component.constructor.name === "AltScreenSearchComponent";
+    return origShowOverlay(component, isSearchBar
+      ? { ...options, anchor: "bottom-left", offsetY: -1 }
+      : options);
+  };
   const cfg = await loadConfig();
   applyPalette(cfg);
 
@@ -101,21 +113,25 @@ Usage:
     state.contents.set("(stdin)", stdinContent);
   }
 
-  let viewer: Viewer | null = null;
+  let viewer: Viewer;
+  let pickerOverlay: ReturnType<typeof tui.showOverlay> | null = null;
+
+  const hidePicker = () => {
+    pickerOverlay?.hide();
+    pickerOverlay = null;
+  };
 
   const showViewer = (startFile?: string) => {
     if (startFile !== undefined) {
       const idx = state.files.indexOf(startFile);
-      if (idx >= 0) state.index = idx;
+      if (idx >= 0) viewer.showFile(idx);
     }
-    viewer = new Viewer({ tui, state, cfg, onQuit: quit, onOpenFile: showPicker });
-    tui.setLayoutRoot(viewer.layoutRoot);
     tui.setFocus(viewer);
-    tui.scrollToTop();
     tui.requestRender();
   };
 
-  const showPicker = (_current?: string) => {
+  const showPicker = () => {
+    hidePicker();
     const items: SelectItem[] = state.files.map((f) => ({
       value: f,
       label: f,
@@ -123,23 +139,27 @@ Usage:
     const picker = new FilePicker({
       tui,
       files: items,
-      position: cfg.pickerPosition,
-      onPick: (value) => showViewer(value),
-      onCancel: () => (viewer ? showViewer() : quit()),
+      onPick: (value) => {
+        hidePicker();
+        showViewer(value);
+      },
+      onCancel: () => {
+        hidePicker();
+        showViewer();
+      },
     });
-    tui.setLayoutRoot(picker);
-    tui.setFocus(picker);
-    tui.scrollToTop();
-    tui.requestRender();
+    pickerOverlay = tui.showOverlay(picker, { anchor: "bottom-left" });
   };
+
+  viewer = new Viewer({ tui, state, cfg, onQuit: quit, onOpenFile: showPicker });
+  tui.setLayoutRoot(viewer.layoutRoot);
+  tui.setFocus(viewer);
 
   // Start with the picker when browsing a directory; viewer otherwise
   if (stdinContent === null && args.length > 0 && statSync(resolve(args[0]!)).isDirectory()) {
     showPicker();
   } else if (stdinContent === null && args.length === 0 && files.length > 1) {
     showPicker();
-  } else {
-    showViewer();
   }
 
   tui.start();

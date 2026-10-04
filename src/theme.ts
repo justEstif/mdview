@@ -21,11 +21,11 @@ export const markdownTheme: MarkdownTheme = {
   strikethrough: style("9"),
   underline: style("4"),
   // Render mermaid blocks as Unicode box-drawing diagrams (same approach as pi).
-  // Unsupported/invalid diagrams fall back to pi-tui's default code block.
+  // Unsupported/invalid diagrams fall back to plain code block text.
   highlightCode: (code: string, lang?: string): string[] => {
-    if (lang !== "mermaid") return code.split("\n").map(markdownTheme.codeBlock);
+    if (lang !== "mermaid") return code.split("\n").map((l) => l);
     const art = render(code);
-    if (!art) return code.split("\n").map(markdownTheme.codeBlock);
+    if (!art) return code.split("\n").map((l) => l);
     return toAnsi(art, DEFAULT_THEME);
   },
 };

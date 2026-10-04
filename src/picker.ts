@@ -20,21 +20,16 @@ export class FilePicker implements Component {
   private maxVisible: number;
   private onPick: (value: string) => void;
   private onCancel: () => void;
-  private position: "top" | "center";
-  private screenRows: number;
 
   constructor(opts: {
     tui: TUI;
     files: SelectItem[];
     onPick: (value: string) => void;
     onCancel: () => void;
-    position?: "top" | "center";
   }) {
     this.files = opts.files;
     this.onPick = opts.onPick;
     this.onCancel = opts.onCancel;
-    this.position = opts.position ?? "top";
-    this.screenRows = (opts.tui as unknown as { rows?: number }).rows ?? 24;
     this.maxVisible = Math.min(opts.files.length, 20);
 
     this.container = new Container();
@@ -95,10 +90,7 @@ export class FilePicker implements Component {
   }
 
   render(width: number): string[] {
-    const lines = this.container.render(width);
-    if (this.position !== "center") return lines;
-    const pad = Math.max(0, Math.floor((this.screenRows - lines.length) / 2));
-    return [...Array.from({ length: pad }, () => ""), ...lines];
+    return this.container.render(width);
   }
 
   invalidate(): void {

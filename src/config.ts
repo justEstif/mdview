@@ -3,7 +3,7 @@ import { join } from "node:path";
 import defaultsJson from "./config.default.json" with { type: "json" };
 
 const defaults = defaultsJson as Required<
-  Pick<MdviewConfig, "center" | "paddingX" | "paddingY" | "statusBar" | "pickerPosition" | "helpPosition">
+  Pick<MdviewConfig, "center" | "paddingX" | "paddingY" | "statusBar">
 >;
 
 export interface MdviewConfig {
@@ -17,10 +17,6 @@ export interface MdviewConfig {
   paddingY?: number;
   /** Show the status bar (default: true) */
   statusBar?: boolean;
-  /** Vertical placement of the file picker (default: "top") */
-  pickerPosition?: "top" | "center";
-  /** Placement of the `?` keymap box (default: "bottomRight") */
-  helpPosition?: "topRight" | "bottomRight" | "bottom" | "center";
   /** Palette overrides for ui.accent / ui.dim colors (ANSI 256 codes) */
   accentColor?: number;
   dimColor?: number;

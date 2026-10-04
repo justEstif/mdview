@@ -21,21 +21,17 @@ bun install -g .
 
 ## mdview vs glow
 
-|                          | mdview                      | glow                          |
-| ------------------------ | --------------------------- | ----------------------------- |
-| Runtime                  | Bun (single-file compile)   | Go binary                     |
-| Size                     | ~1k LoC, no styling deps    | large, bubbles/charm stack    |
-| Images in terminal       | kitty/iterm2 inline         | none                          |
-| Mermaid diagrams         | rendered as box-drawing art | not rendered                  |
-| File picker              | built-in fuzzy filter       | via `glow` + fzf manually     |
-| Keymap reference         | `?` overlay, configurable   | none                          |
-| Config format            | JSON5 with comments         | YAML                          |
-| Word wrap / paging       | pi-tui alt screen           | gum/style                     |
-| Themes                   | ANSI 256, palette overrides | built-in + custom styles      |
-
-Being lean is the point: mdview is a viewer, not a render farm. glow still
-wins on Word-compatible file discovery (it walks git repos, cloud sources)
-and mature theming.
+|                    | mdview                      | glow                       |
+| ------------------ | --------------------------- | -------------------------- |
+| Runtime            | Bun (single-file compile)   | Go binary                  |
+| Size               | ~1k LoC, no styling deps    | large, bubbles/charm stack |
+| Images in terminal | kitty/iterm2 inline         | none                       |
+| Mermaid diagrams   | rendered as box-drawing art | not rendered               |
+| File picker        | built-in fuzzy filter       | via `glow` + fzf manually  |
+| Keymap reference   | `?` overlay, configurable   | none                       |
+| Config format      | JSON5 with comments         | YAML                       |
+| Word wrap / paging | pi-tui alt screen           | gum/style                  |
+| Themes             | ANSI 256, palette overrides | built-in + custom styles   |
 
 ## Keys
 
@@ -49,24 +45,6 @@ and mature theming.
 | `/`                          | search (built into pi-tui alt screen) |
 | `o`                          | open file picker                      |
 | `q`, `Esc`, `Ctrl+C`         | quit                                  |
-
-## Architecture
-
-```mermaid
-flowchart TD
-    A[CLI args / stdin] --> B{source?}
-    B -- file --> C[read file]
-    B -- dir --> D[collect .md files] --> E[FilePicker]
-    B -- stdin --> F[read stdin]
-    E --> G[Viewer]
-    C --> G
-    F --> G
-    G --> H[MarkdownBody - ScrollView, primary]
-    G --> I[StatusBar - pinned]
-    H --> J{image line?}
-    J -- yes, kitty/iterm2 --> K[Image component]
-    J -- no/fallback --> L[Markdown component]
-```
 
 ## Images
 
@@ -91,15 +69,15 @@ Standalone image lines are rendered inline via the terminal's graphics protocol
   // "center": true,
   // "paddingX": 1,
   // "paddingY": 1,
-  "statusBar": true,
-  "pickerPosition": "top",
-  "helpPosition": "bottomRight",
+  // "statusBar": true,
+  // "accentColor": 75,
+  // "dimColor": 245,
 }
 ```
 
-- `pickerPosition`: `"top"` or `"center"` — vertical placement of the file picker.
-- `helpPosition`: `"topRight"`, `"bottomRight"`, `"bottom"`, or `"center"` — placement of the `?` keymap box.
-- `accentColor` / `dimColor`: ANSI 256 codes overriding the picker/help palette (e.g. `75`, `245`).
+- `accentColor` / `dimColor`: ANSI 256 codes overriding the picker/help palette.
+
+The file picker is always centered; the `?` keymap box is always bottom-left.
 
 ## Status
 

@@ -10,10 +10,11 @@ import {
   matchesKey,
   truncateToWidth,
   type Component,
+  type OverlayAnchor,
   type TUI,
 } from "@earendil-works/pi-tui";
 import { markdownTheme } from "./theme";
-import { box, overlayAt, ui, visibleWidth, type OverlayPosition } from "./ui";
+import { box, clip, ui, visibleWidth } from "./ui";
 import type { MdviewConfig } from "./config";
 
 export type ViewportTui = TUI & {
@@ -22,6 +23,7 @@ export type ViewportTui = TUI & {
   scrollBy: (n: number) => void;
   scrollToTop: () => void;
   scrollToBottom: () => void;
+  openSearch: () => void;
 };
 
 export const asViewport = (tui: TUI): ViewportTui => tui as ViewportTui;
@@ -162,8 +164,8 @@ class StatusBar implements Component {
   invalidate(): void {}
 }
 
-/** Compact keybind help box, overlaid bottom-right (mini.clue style). */
-class HelpOverlay {
+/** Compact keybind help box, shown via tui.showOverlay (mini.clue style). */
+class HelpOverlay implements Component {
   private groups: [string, [string, string][]][] = [
     ["navigate", [
       ["j/k ↑↓", "scroll line"],
@@ -174,14 +176,18 @@ class HelpOverlay {
     ["files", [
       ["h/l  n/p", "prev / next file"],
       ["o", "file picker"],
-      ["/", "search"],
+      ["/", "search (enter cycles, esc closes)"],
     ]],
     ["quit", [
       ["q  Esc  ⌃C", "quit"],
     ]],
   ];
 
-  render(): string[] {
+  render(width: number): string[] {
+    return clipToWidth(this.rows(), width);
+  }
+
+  rows(): string[] {
     const keyW = Math.max(
       ...this.groups.flatMap(([, es]) => es.map(([k]) => k.length)),
     );
@@ -199,13 +205,17 @@ class HelpOverlay {
   }
 
   get height(): number {
-    return this.render().length;
+    return this.rows().length;
   }
 
   get width(): number {
-    return visibleWidth(this.render()[0] ?? "");
+    return visibleWidth(this.rows()[0] ?? "");
   }
+
+  invalidate(): void {}
 }
+
+const clipToWidth = (lines: string[], w: number): string[] => lines.map((l) => clip(l, w));
 
 export class Viewer implements Component {
   private state: ViewerState;
@@ -294,7 +304,7 @@ export class Viewer implements Component {
     const viewport = this.tui;
 
     if (this.showHelp) {
-      this.showHelp = false;
+      this.hideHelp();
       this.tui.requestRender();
       return;
     }
@@ -317,12 +327,13 @@ export class Viewer implements Component {
     else if (data === "G") this.scrollView.scrollToEnd();
     else if (data === "g") this.pendingG = true;
     else if (matchesKey(data, "space")) viewport.scrollBy(20);
+    else if (data === "/") this.tui.openSearch();
     else if (data === "n") this.nextFile();
     else if (data === "p") this.prevFile();
     else if (data === "o") this.onOpenFile(this.state.files[this.state.index]!);
-    else if (data === "?") this.showHelp = !this.showHelp;
+    else if (data === "?") this.showHelp ? this.hideHelp() : this.revealHelp();
     else if (data === "q" || matchesKey(data, "ctrl+c") || matchesKey(data, "esc")) {
-      if (this.showHelp) this.showHelp = false;
+      if (this.showHelp) this.hideHelp();
       else this.quitNow();
     }
     else return;
@@ -330,15 +341,22 @@ export class Viewer implements Component {
     this.tui.requestRender();
   }
 
+  private revealHelp(): void {
+    this.showHelp = true;
+    // 1-row offset keeps the pinned status bar visible
+    const offsetY = this.cfg.statusBar === false ? 0 : -1;
+    this.tui.showOverlay(this.help, { anchor: "bottom-left", nonCapturing: true, offsetY });
+  }
+
+  private hideHelp(): void {
+    this.showHelp = false;
+    this.tui.hideOverlay();
+  }
+
   render(width: number): string[] {
     const lines = this.body.render(width);
     this.lastContentHeight = lines.length;
-    const out = this.root.render(width);
-    if (this.showHelp) {
-      const pos: OverlayPosition = this.cfg.helpPosition ?? "bottomRight";
-      return overlayAt(out, this.help.render(), pos, this.cfg.statusBar === false ? 0 : 1);
-    }
-    return out;
+    return this.root.render(width);
   }
 
   invalidate(): void {
