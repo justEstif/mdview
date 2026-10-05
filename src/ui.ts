@@ -3,11 +3,14 @@ import { styleText } from "node:util";
 /** Shared mdview palette + box drawing. One place for all UI styling. */
 
 export const ui = {
-  accent: (s: string) => styleText("blueBright", s),
+  accent: (s: string) => styleText("blueBright", s), // overridden to Dracula purple below
   dim: (s: string) => styleText("gray", s),
-  border: (s: string) => `\x1b[38;5;240m${s}\x1b[39m`,
+  border: (s: string) => `\x1b[38;5;61m${s}\x1b[39m`, // Dracula comment
   fg: (code: number) => (s: string) => `\x1b[38;5;${code}m${s}\x1b[39m`,
 };
+
+// Dracula defaults (purple 141); config overrides via accentColor/dimColor.
+ui.accent = ui.fg(141);
 
 /** Apply palette overrides from config (ANSI 256 codes). */
 export function applyPalette(opts: { accentColor?: number; dimColor?: number }): void {

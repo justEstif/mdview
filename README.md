@@ -28,10 +28,10 @@ bun install -g .
 | Images in terminal | kitty/iterm2 inline         | none                       |
 | Mermaid diagrams   | rendered as box-drawing art | not rendered               |
 | File picker        | built-in fuzzy filter       | via `glow` + fzf manually  |
-| Keymap reference   | `?` overlay, configurable   | none                       |
+| Keymap reference   | `?` swaps the status bar      | none                       |
 | Config format      | JSON5 with comments         | YAML                       |
 | Word wrap / paging | pi-tui alt screen           | gum/style                  |
-| Themes             | ANSI 256, palette overrides | built-in + custom styles   |
+| Themes             | Dracula default, ANSI 256 overrides | built-in + custom styles   |
 
 ## Keys
 
@@ -42,9 +42,13 @@ bun install -g .
 | space                        | scroll 20 lines                       |
 | `gg` / `G`                   | top / bottom                          |
 | `h`/`l`, `n`/`p`             | prev / next file                      |
-| `/`                          | search (built into pi-tui alt screen) |
+| `/`                          | search — results stack above the bar, enter jumps to the line |
 | `o`                          | open file picker                      |
+| `?`                          | swap status bar: tabs ↔ keymap         |
 | `q`, `Esc`, `Ctrl+C`         | quit                                  |
+
+The status bar shows an open-file tab strip with the scroll position; `?`
+swaps it for a keymap line. It can be disabled with `"statusBar": false`.
 
 ## Images
 
@@ -77,12 +81,15 @@ Standalone image lines are rendered inline via the terminal's graphics protocol
 
 - `accentColor` / `dimColor`: ANSI 256 codes overriding the picker/help palette.
 
-The file picker is always centered; the `?` keymap box is always bottom-left.
+Running `mdview` with no arguments opens a full-screen fuzzy picker over the
+current directory (and stays open with an empty-state message when there is
+no markdown). The `o` picker during viewing is a compact overlay.
 
 ## Status
 
 v0.2.0: files, directory browsing with fuzzy picker, stdin, inline images,
-mermaid rendering, pinned status bar, `?` keymap overlay, JSON5 config.
+mermaid rendering, full-screen startup picker, two-tier status bar with tab
+strip, JSON5 config.
 
 Ideas for later: GitHub URL fetching, TOC jump (`t`), light/dark theme
 detection via OSC 11, `imageMaxWidthCells` config.

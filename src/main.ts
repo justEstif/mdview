@@ -10,7 +10,7 @@ import {
   type TUI,
 } from "@earendil-works/pi-tui";
 import { Viewer, asViewport, type ViewerState } from "./viewer";
-import { FilePicker } from "./picker";
+import { BarStack, fuzzyRows } from "./barstack";
 import { loadConfig } from "./config";
 import { applyPalette } from "./ui";
 
@@ -58,16 +58,6 @@ Usage:
   const terminal = new ProcessTerminal();
   const tui = asViewport(new TuiAltScreen(terminal));
 
-  // pi-tui hardcodes the search overlay to top-right; show it bottom-left
-  // next to the help box instead. Detection is by component class since
-  // openSearch() passes no distinguishing options.
-  const origShowOverlay = tui.showOverlay.bind(tui);
-  tui.showOverlay = (component: Component, options?: OverlayOptions) => {
-    const isSearchBar = component.constructor.name === "AltScreenSearchComponent";
-    return origShowOverlay(component, isSearchBar
-      ? { ...options, anchor: "bottom-left", offsetY: -1 }
-      : options);
-  };
   const cfg = await loadConfig();
   applyPalette(cfg);
 
@@ -77,12 +67,9 @@ Usage:
   let files: string[] = [];
   let stdinContent: string | null = null;
   if (args.length === 0 && process.stdin.isTTY) {
-    // No args in a TTY: browse cwd
+    // No args in a TTY: browse cwd. Zero files still opens the picker
+    // (in-TUI empty state) instead of exiting.
     files = collectMarkdownFiles(process.cwd());
-    if (files.length === 0) {
-      console.error("mdview: no markdown files found in current directory");
-      process.exit(1);
-    }
   } else {
     const paths = args.filter((a) => !a.startsWith("-"));
     if (paths.length === 0) {
@@ -113,6 +100,43 @@ Usage:
     state.contents.set("(stdin)", stdinContent);
   }
 
+  // No args in a TTY: full-screen picker as the layout root; the viewer
+  // swaps in once a file is picked. Zero files opens the empty state.
+  const startPicker = stdinContent === null && args.length === 0;
+  const barPicker = (files: string[], onPick: (f: string) => void, onCancel: () => void, fullscreen: boolean) =>
+    new BarStack({
+      prefix: fullscreen ? "/" : "o",
+      placeholder: "search…",
+      maxRows: fullscreen ? Math.max(1, terminal.rows - 3) : 8,
+      ...(fullscreen ? { fillHeight: () => terminal.rows } : {}),
+      emptyRows: () => [
+        "",
+        "no markdown files in this directory",
+        "",
+        "try a docs folder, a file argument",
+        "\u0028mdview notes.md\u0029, or pipe \u0028cat x.md | mdview\u0029",
+      ],
+      source: (query) =>
+        fuzzyRows(files, query, (f) => f).map((r) => ({
+          value: r.value,
+          label: r.label.replace(process.cwd() + "/", ""),
+        })),
+      onPick,
+      onCancel,
+      hint: (n, q) =>
+        !q
+          ? "enter open · esc quit"
+          : `${n} ${n === 1 ? "file" : "files"} · enter open · esc ${fullscreen ? "quit" : "back"}`,
+    });
+
+  if (startPicker && files.length === 0) {
+    const empty = barPicker([], () => {}, quit, true);
+    tui.setLayoutRoot(empty);
+    tui.setFocus(empty);
+    tui.start();
+    return;
+  }
+
   let viewer: Viewer;
   let pickerOverlay: ReturnType<typeof tui.showOverlay> | null = null;
 
@@ -132,33 +156,42 @@ Usage:
 
   const showPicker = () => {
     hidePicker();
-    const items: SelectItem[] = state.files.map((f) => ({
-      value: f,
-      label: f,
-    }));
-    const picker = new FilePicker({
-      tui,
-      files: items,
-      onPick: (value) => {
+    const picker = barPicker(
+      state.files,
+      (value) => {
         hidePicker();
         showViewer(value);
       },
-      onCancel: () => {
+      () => {
         hidePicker();
         showViewer();
       },
-    });
+      false,
+    );
     pickerOverlay = tui.showOverlay(picker, { anchor: "bottom-left" });
   };
 
   viewer = new Viewer({ tui, state, cfg, onQuit: quit, onOpenFile: showPicker });
-  tui.setLayoutRoot(viewer.layoutRoot);
   tui.setFocus(viewer);
 
-  // Start with the picker when browsing a directory; viewer otherwise
+  if (startPicker) {
+    const picker = barPicker(
+      state.files,
+      (value) => {
+        tui.setLayoutRoot(viewer.layoutRoot);
+        showViewer(value);
+      },
+      quit,
+      true,
+    );
+    tui.setLayoutRoot(picker);
+    tui.setFocus(picker);
+  } else {
+    tui.setLayoutRoot(viewer.layoutRoot);
+  }
+
+  // Start with the overlay picker when viewing a directory argument
   if (stdinContent === null && args.length > 0 && statSync(resolve(args[0]!)).isDirectory()) {
-    showPicker();
-  } else if (stdinContent === null && args.length === 0 && files.length > 1) {
     showPicker();
   }
 
