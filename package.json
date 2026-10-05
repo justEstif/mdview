@@ -13,7 +13,7 @@
     "@earendil-works/pi-tui": "^0.84.4",
     "grok-mermaid": "^0.2.3"
   },
-  "version": "0.2.1",
+  "version": "0.3.0",
   "bin": {
     "mdview": "./src/main.ts"
   }
