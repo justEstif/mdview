@@ -44,6 +44,7 @@ bun install -g .
 | `gg` / `G`                   | top / bottom                          |
 | `h`/`l`, `n`/`p`             | prev / next file                      |
 | `/`                          | search — results stack above the bar, enter jumps to the line |
+| `t`                          | table of contents — filter headings, enter jumps |
 | `o`                          | open file picker                      |
 | `?`                          | swap status bar: tabs ↔ keymap         |
 | `q`, `Esc`, `Ctrl+C`         | quit                                  |

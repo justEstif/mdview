@@ -193,7 +193,7 @@ class StatusBar implements Component {
 
   render(width: number): string[] {
     const keys =
-      " jk↓↑ scroll · du·10 · ^f^b page · ^e^y line · ggG ends · hl/np files · o pick · / find · q quit ";
+      " jk↓↑ scroll · du·10 · ^f^b page · ^e^y line · ggG ends · hl/np files · o pick · / find · t toc · q quit ";
     if (this.showKeys) {
       return [this.tier(width, keys, " ? close ", 236, 250)];
     }
@@ -317,6 +317,54 @@ export class Viewer implements Component {
     this.searchOverlay = this.tui.showOverlay(stack, { anchor: "bottom-left" });
   }
 
+  /** `t` — heading outline; enter jumps to the heading's rendered line. */
+  private openBarTOC(): void {
+    this.searchOverlay?.hide();
+    // Scan the rendered plain lines so values match what scrollTo targets;
+    // raw `#` markers are consumed by the markdown renderer.
+    const plain = this.renderedPlain();
+    const items: { line: number; label: string }[] = [];
+    let from = 0;
+    for (const line of this.currentContent().split("\n")) {
+      const m = line.match(/^ {0,3}(#{1,6})\s+(.*?)(?:\s+#+\s*)?$/);
+      if (!m) continue;
+      const title = m[2]!.replace(/[`*_[\]]/g, "").trim();
+      if (!title) continue;
+      const idx = plain.findIndex((l, i) => i >= from && l.includes(title));
+      if (idx < 0) continue;
+      items.push({ line: idx, label: "  ".repeat(m[1]!.length - 1) + title });
+      from = idx + 1;
+    }
+    const stack = new BarStack({
+      prefix: "t",
+      placeholder: "outline…",
+      maxRows: 8,
+      source: (query) => {
+        const q = query.toLowerCase();
+        return items
+          .filter((it) => !q || it.label.toLowerCase().includes(q))
+          .map((it) => ({ value: String(it.line), label: it.label, description: String(it.line + 1) }))
+          .slice(0, 50);
+      },
+      onPick: (value) => {
+        this.searchOverlay?.hide();
+        this.searchOverlay = null;
+        this.scrollView.scrollTo(Number(value));
+        this.tui.requestRender();
+      },
+      onCancel: () => {
+        this.searchOverlay?.hide();
+        this.searchOverlay = null;
+        this.tui.requestRender();
+      },
+      hint: (n, q) =>
+        !q ? "enter jump · esc back"
+        : n ? `${n} headings · enter jump · esc back`
+        : "no headings · esc back",
+    });
+    this.searchOverlay = this.tui.showOverlay(stack, { anchor: "bottom-left" });
+  }
+
   private toggleKeys(): void {
     this.status.showKeys = !this.status.showKeys;
   }
@@ -392,6 +440,7 @@ export class Viewer implements Component {
     else if (data === "G") this.scrollView.scrollToEnd();
     else if (data === "g") this.pendingG = true;
     else if (data === "/") this.openBarSearch();
+    else if (data === "t") this.openBarTOC();
     else if (data === "n") this.nextFile();
     else if (data === "p") this.prevFile();
     else if (data === "o") this.onOpenFile(this.state.files[this.state.index]!);
