@@ -66,9 +66,14 @@ class MarkdownBody implements Component {
     private readonly cfg: MdviewConfig,
     /** Directory to resolve relative image paths against */
     private readonly baseDir: string,
+    /** Notified after each render with the produced height and width. */
+    onRendered?: (h: number, w: number) => void,
   ) {
+    this.onRendered = onRendered;
     this.setText(text);
   }
+
+  private onRendered?: (h: number, w: number) => void;
 
   setText(text: string): void {
     this.segments = [];
@@ -122,8 +127,11 @@ class MarkdownBody implements Component {
     }
     if (contentWidth < width && this.cfg.center !== false) {
       const pad = Math.floor((width - contentWidth) / 2);
-      return lines.map((line) => " ".repeat(pad) + line);
+      const centered = lines.map((line) => " ".repeat(pad) + line);
+      this.onRendered?.(centered.length, width);
+      return centered;
     }
+    this.onRendered?.(lines.length, width);
     return lines;
   }
 
@@ -221,7 +229,10 @@ export class Viewer implements Component {
     this.cfg = opts.cfg;
     this.onQuit = opts.onQuit;
     this.onOpenFile = opts.onOpenFile;
-    this.body = new MarkdownBody(this.currentContent(), this.cfg, this.currentBaseDir());
+    this.body = new MarkdownBody(this.currentContent(), this.cfg, this.currentBaseDir(), (h, w) => {
+      this.lastContentHeight = h;
+      this.lastWidth = w;
+    });
     // The primary ScrollView is what TuiAltScreen.scrollBy() actually scrolls.
     this.scrollView = new ScrollView(this.body, { primary: true, follow: "none" });
     const status: StatusBar = new StatusBar(this.state, () => ({
@@ -381,9 +392,6 @@ export class Viewer implements Component {
   }
 
   render(width: number): string[] {
-    this.lastWidth = width;
-    const lines = this.body.render(width);
-    this.lastContentHeight = lines.length;
     return this.root.render(width);
   }
 
