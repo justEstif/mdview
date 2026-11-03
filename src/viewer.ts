@@ -193,7 +193,7 @@ class StatusBar implements Component {
 
   render(width: number): string[] {
     const keys =
-      " jk↓↑ scroll · du·10 · ggG ends · hl/np files · o pick · / find · q quit ";
+      " jk↓↑ scroll · du·10 · ^f^b page · ^e^y line · ggG ends · hl/np files · o pick · / find · q quit ";
     if (this.showKeys) {
       return [this.tier(width, keys, " ? close ", 236, 250)];
     }
