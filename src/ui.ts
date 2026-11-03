@@ -18,6 +18,15 @@ export function applyPalette(opts: { accentColor?: number; dimColor?: number }):
   if (opts.dimColor !== undefined) ui.dim = ui.fg(opts.dimColor);
 }
 
+/** Adjust the chrome palette for a light terminal background (OSC 11
+ *  autodetect). Config accent/dim overrides are applied afterwards. */
+export function applyScheme(scheme: "dark" | "light"): void {
+  if (scheme === "light") {
+    ui.accent = ui.fg(61);
+    ui.border = (s: string) => `\x1b[38;5;244m${s}\x1b[39m`;
+  }
+}
+
 /** Visible width of a string (ANSI escapes stripped). */
 export const visibleWidth = (s: string): number =>
   s.replace(/\x1b\[[0-9;]*m/g, "").length;

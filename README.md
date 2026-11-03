@@ -31,7 +31,7 @@ bun install -g .
 | Keymap reference   | `?` swaps the status bar      | none                       |
 | Config format      | JSON5 with comments         | YAML                       |
 | Word wrap / paging | pi-tui alt screen           | gum/style                  |
-| Themes             | Dracula default, ANSI 256 overrides | built-in + custom styles   |
+| Themes             | Dracula default, light/dark autodetect (OSC 11), ANSI 256 overrides | built-in + custom styles   |
 
 ## Keys
 
@@ -54,6 +54,12 @@ swaps it for a keymap line. It can be disabled with `"statusBar": false`.
 
 Viewed files are watched: saving the file reloads it in place, keeping the
 scroll position where the new content allows.
+
+## Theme autodetection
+
+At startup mdview queries the terminal's background color (OSC 11) and picks
+the Dracula palette (dark) or a light-background variant automatically. An
+explicit `accentColor`/`dimColor` in the config always wins over detection.
 
 ## Images
 

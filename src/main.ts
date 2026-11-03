@@ -12,7 +12,8 @@ import {
 import { Viewer, asViewport, type ViewerState } from "./viewer";
 import { BarStack, fuzzyRows } from "./barstack";
 import { loadConfig } from "./config";
-import { applyPalette } from "./ui";
+import { applyPalette, applyScheme } from "./ui";
+import { setMarkdownScheme } from "./theme";
 
 const MD_EXT = /\.(md|markdown|mdx)$/i;
 
@@ -59,6 +60,21 @@ Usage:
   const tui = asViewport(new TuiAltScreen(terminal));
 
   const cfg = await loadConfig();
+
+  // Detect the terminal's background color (OSC 11) once and pick a readable
+  // palette. Explicit config colors win: applyPalette runs after detection.
+  try {
+    const colors = await tui.queryTerminalColors({ timeoutMs: 200 });
+    const bg = colors.background;
+    if (bg) {
+      const luma = 0.299 * bg.r + 0.587 * bg.g + 0.114 * bg.b;
+      const scheme = luma > 128 ? "light" : "dark";
+      applyScheme(scheme);
+      setMarkdownScheme(scheme);
+    }
+  } catch {
+    // Terminal didn't answer; keep the dark defaults.
+  }
   applyPalette(cfg);
 
   const quit = () => tui.stop();

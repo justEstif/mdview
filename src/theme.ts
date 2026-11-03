@@ -32,3 +32,19 @@ export const markdownTheme: MarkdownTheme = {
     return toAnsi(art, DEFAULT_THEME);
   },
 };
+
+/** Swap the palette for a light terminal background (OSC 11 autodetect).
+ *  Dracula defaults assume a dark background; these stay readable on light ones. */
+export function setMarkdownScheme(scheme: "dark" | "light"): void {
+  if (scheme === "dark") return;
+  const chipLight = (s: string) => `\x1b[48;5;253m\x1b[38;5;130m${s}\x1b[0m`;
+  markdownTheme.heading = (s) => style("1")(fg(61)(s));
+  markdownTheme.link = fg(31);
+  markdownTheme.linkUrl = fg(244);
+  markdownTheme.code = chipLight;
+  markdownTheme.codeBlockBorder = fg(244);
+  markdownTheme.quote = fg(238);
+  markdownTheme.quoteBorder = fg(61);
+  markdownTheme.hr = fg(244);
+  markdownTheme.listBullet = fg(161);
+}
