@@ -38,8 +38,9 @@ bun install -g .
 | Key                          | Action                                |
 | ---------------------------- | ------------------------------------- |
 | `j`/`k`, arrows, mouse wheel | scroll                                |
-| `d`/`u`, PgDn-ish            | scroll 10 lines                       |
-| space                        | scroll 20 lines                       |
+| `d`/`u`, Ctrl+D/Ctrl+U      | scroll 10 lines                       |
+| Ctrl+F / Ctrl+B              | scroll a full page                    |
+| Ctrl+E / Ctrl+Y              | scroll one line                       |
 | `gg` / `G`                   | top / bottom                          |
 | `h`/`l`, `n`/`p`             | prev / next file                      |
 | `/`                          | search — results stack above the bar, enter jumps to the line |
@@ -49,6 +50,9 @@ bun install -g .
 
 The status bar shows an open-file tab strip with the scroll position; `?`
 swaps it for a keymap line. It can be disabled with `"statusBar": false`.
+
+Viewed files are watched: saving the file reloads it in place, keeping the
+scroll position where the new content allows.
 
 ## Images
 

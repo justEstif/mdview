@@ -257,10 +257,12 @@ export class Viewer implements Component {
   private searchOverlay: ReturnType<ViewportTui["showOverlay"]> | null = null;
   private lastWidth = 80;
   private plainCache: { key: string; lines: string[] } | null = null;
+  /** Bumped whenever the body content changes, keying the search cache. */
+  private contentStamp = 0;
 
   /** Rendered body lines with styling stripped — what `/` searches. */
   private renderedPlain(): string[] {
-    const key = `${this.state.index}:${this.lastWidth}`;
+    const key = `${this.state.index}:${this.contentStamp}:${this.lastWidth}`;
     if (this.plainCache?.key === key) return this.plainCache.lines;
     const strip = (l: string) =>
       l.replace(/\x1b\[[0-9;]*m/g, "").replace(/\x1b\]8;;[^\x1b]*\x1b\\/g, "");
@@ -345,8 +347,19 @@ export class Viewer implements Component {
   showFile(index: number): void {
     if (index < 0 || index >= this.state.files.length) return;
     this.state.index = index;
+    this.contentStamp++;
     this.body.setText(this.currentContent());
     this.scrollView.scrollToStart();
+    this.tui.requestRender();
+  }
+
+  /** Re-read the current file (watch mode), keeping the scroll position
+   *  clamped to the new content height. */
+  reload(): void {
+    this.contentStamp++;
+    this.body.setText(this.currentContent());
+    this.body.invalidate();
+    this.scrollView.scrollTo(Math.min(this.scrollView.scrollTop, Math.max(0, this.lastContentHeight - this.scrollView.viewportHeight)));
     this.tui.requestRender();
   }
 

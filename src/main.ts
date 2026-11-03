@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync, watch } from "node:fs";
 import { resolve } from "node:path";
 import {
   ProcessTerminal,
@@ -173,6 +173,29 @@ Usage:
 
   viewer = new Viewer({ tui, state, cfg, onQuit: quit, onOpenFile: showPicker });
   tui.setFocus(viewer);
+
+  // Watch mode: reload the viewed file when it changes on disk.
+  // 120 ms debounce absorbs editor save bursts (atomic rename etc.).
+  const reloadTimers = new Map<string, Timer>();
+  for (const f of state.files) {
+    if (f === "(stdin)") continue;
+    watch(f, { persistent: false }, () => {
+      const pending = reloadTimers.get(f);
+      if (pending) clearTimeout(pending);
+      reloadTimers.set(
+        f,
+        setTimeout(() => {
+          reloadTimers.delete(f);
+          try {
+            state.contents.set(f, readFileSync(f, "utf8"));
+          } catch {
+            return; // file vanished mid-write; keep showing the last version
+          }
+          if (state.files[state.index] === f) viewer.reload();
+        }, 120),
+      );
+    });
+  }
 
   if (startPicker) {
     const picker = barPicker(
