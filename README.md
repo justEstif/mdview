@@ -31,24 +31,39 @@ bun install -g .
 | Keymap reference   | `?` swaps the status bar      | none                       |
 | Config format      | JSON5 with comments         | YAML                       |
 | Word wrap / paging | pi-tui alt screen           | gum/style                  |
-| Themes             | Dracula default, ANSI 256 overrides | built-in + custom styles   |
+| Themes             | Dracula default, light/dark autodetect (OSC 11), ANSI 256 overrides | built-in + custom styles   |
 
 ## Keys
 
 | Key                          | Action                                |
 | ---------------------------- | ------------------------------------- |
 | `j`/`k`, arrows, mouse wheel | scroll                                |
-| `d`/`u`, PgDn-ish            | scroll 10 lines                       |
-| space                        | scroll 20 lines                       |
+| `d`/`u`, Ctrl+D/Ctrl+U      | scroll 10 lines                       |
+| Ctrl+F / Ctrl+B              | scroll a full page                    |
+| Ctrl+E / Ctrl+Y              | scroll one line                       |
 | `gg` / `G`                   | top / bottom                          |
 | `h`/`l`, `n`/`p`             | prev / next file                      |
 | `/`                          | search — results stack above the bar, enter jumps to the line |
+| `t`                          | table of contents — filter headings, enter jumps |
 | `o`                          | open file picker                      |
+| `E`                          | open the file in your editor          |
 | `?`                          | swap status bar: tabs ↔ keymap         |
 | `q`, `Esc`, `Ctrl+C`         | quit                                  |
 
+`E` opens the current file in `"editor"` from the config, then `$EDITOR`,
+then `vi`; the view reloads when the editor exits. Not available for stdin.
+
 The status bar shows an open-file tab strip with the scroll position; `?`
 swaps it for a keymap line. It can be disabled with `"statusBar": false`.
+
+Viewed files are watched: saving the file reloads it in place, keeping the
+scroll position where the new content allows.
+
+## Theme autodetection
+
+At startup mdview queries the terminal's background color (OSC 11) and picks
+the Dracula palette (dark) or a light-background variant automatically. An
+explicit `accentColor`/`dimColor` in the config always wins over detection.
 
 ## Images
 

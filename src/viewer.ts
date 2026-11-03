@@ -66,9 +66,14 @@ class MarkdownBody implements Component {
     private readonly cfg: MdviewConfig,
     /** Directory to resolve relative image paths against */
     private readonly baseDir: string,
+    /** Notified after each render with the produced height and width. */
+    onRendered?: (h: number, w: number) => void,
   ) {
+    this.onRendered = onRendered;
     this.setText(text);
   }
+
+  private onRendered?: (h: number, w: number) => void;
 
   setText(text: string): void {
     this.segments = [];
@@ -122,8 +127,11 @@ class MarkdownBody implements Component {
     }
     if (contentWidth < width && this.cfg.center !== false) {
       const pad = Math.floor((width - contentWidth) / 2);
-      return lines.map((line) => " ".repeat(pad) + line);
+      const centered = lines.map((line) => " ".repeat(pad) + line);
+      this.onRendered?.(centered.length, width);
+      return centered;
     }
+    this.onRendered?.(lines.length, width);
     return lines;
   }
 
@@ -185,7 +193,7 @@ class StatusBar implements Component {
 
   render(width: number): string[] {
     const keys =
-      " jk↓↑ scroll · du·10 · ggG ends · hl/np files · o pick · / find · q quit ";
+      " jk↓↑ scroll · du·10 · ^f^b page · ^e^y line · ggG ends · hl/np files · o pick · E edit · / find · t toc · q quit ";
     if (this.showKeys) {
       return [this.tier(width, keys, " ? close ", 236, 250)];
     }
@@ -207,6 +215,7 @@ export class Viewer implements Component {
   private cfg: MdviewConfig;
   private onQuit: () => void;
   private onOpenFile: (file: string) => void;
+  private onEdit: (file: string) => void;
   private pendingG = false;
 
   constructor(opts: {
@@ -215,13 +224,18 @@ export class Viewer implements Component {
     cfg: MdviewConfig;
     onQuit: () => void;
     onOpenFile: (file: string) => void;
+    onEdit?: (file: string) => void;
   }) {
     this.tui = asViewport(opts.tui);
     this.state = opts.state;
     this.cfg = opts.cfg;
     this.onQuit = opts.onQuit;
     this.onOpenFile = opts.onOpenFile;
-    this.body = new MarkdownBody(this.currentContent(), this.cfg, this.currentBaseDir());
+    this.onEdit = opts.onEdit ?? (() => {});
+    this.body = new MarkdownBody(this.currentContent(), this.cfg, this.currentBaseDir(), (h, w) => {
+      this.lastContentHeight = h;
+      this.lastWidth = w;
+    });
     // The primary ScrollView is what TuiAltScreen.scrollBy() actually scrolls.
     this.scrollView = new ScrollView(this.body, { primary: true, follow: "none" });
     const status: StatusBar = new StatusBar(this.state, () => ({
@@ -246,10 +260,12 @@ export class Viewer implements Component {
   private searchOverlay: ReturnType<ViewportTui["showOverlay"]> | null = null;
   private lastWidth = 80;
   private plainCache: { key: string; lines: string[] } | null = null;
+  /** Bumped whenever the body content changes, keying the search cache. */
+  private contentStamp = 0;
 
   /** Rendered body lines with styling stripped — what `/` searches. */
   private renderedPlain(): string[] {
-    const key = `${this.state.index}:${this.lastWidth}`;
+    const key = `${this.state.index}:${this.contentStamp}:${this.lastWidth}`;
     if (this.plainCache?.key === key) return this.plainCache.lines;
     const strip = (l: string) =>
       l.replace(/\x1b\[[0-9;]*m/g, "").replace(/\x1b\]8;;[^\x1b]*\x1b\\/g, "");
@@ -304,6 +320,54 @@ export class Viewer implements Component {
     this.searchOverlay = this.tui.showOverlay(stack, { anchor: "bottom-left" });
   }
 
+  /** `t` — heading outline; enter jumps to the heading's rendered line. */
+  private openBarTOC(): void {
+    this.searchOverlay?.hide();
+    // Scan the rendered plain lines so values match what scrollTo targets;
+    // raw `#` markers are consumed by the markdown renderer.
+    const plain = this.renderedPlain();
+    const items: { line: number; label: string }[] = [];
+    let from = 0;
+    for (const line of this.currentContent().split("\n")) {
+      const m = line.match(/^ {0,3}(#{1,6})\s+(.*?)(?:\s+#+\s*)?$/);
+      if (!m) continue;
+      const title = m[2]!.replace(/[`*_[\]]/g, "").trim();
+      if (!title) continue;
+      const idx = plain.findIndex((l, i) => i >= from && l.includes(title));
+      if (idx < 0) continue;
+      items.push({ line: idx, label: "  ".repeat(m[1]!.length - 1) + title });
+      from = idx + 1;
+    }
+    const stack = new BarStack({
+      prefix: "t",
+      placeholder: "outline…",
+      maxRows: 8,
+      source: (query) => {
+        const q = query.toLowerCase();
+        return items
+          .filter((it) => !q || it.label.toLowerCase().includes(q))
+          .map((it) => ({ value: String(it.line), label: it.label, description: String(it.line + 1) }))
+          .slice(0, 50);
+      },
+      onPick: (value) => {
+        this.searchOverlay?.hide();
+        this.searchOverlay = null;
+        this.scrollView.scrollTo(Number(value));
+        this.tui.requestRender();
+      },
+      onCancel: () => {
+        this.searchOverlay?.hide();
+        this.searchOverlay = null;
+        this.tui.requestRender();
+      },
+      hint: (n, q) =>
+        !q ? "enter jump · esc back"
+        : n ? `${n} headings · enter jump · esc back`
+        : "no headings · esc back",
+    });
+    this.searchOverlay = this.tui.showOverlay(stack, { anchor: "bottom-left" });
+  }
+
   private toggleKeys(): void {
     this.status.showKeys = !this.status.showKeys;
   }
@@ -334,8 +398,19 @@ export class Viewer implements Component {
   showFile(index: number): void {
     if (index < 0 || index >= this.state.files.length) return;
     this.state.index = index;
+    this.contentStamp++;
     this.body.setText(this.currentContent());
     this.scrollView.scrollToStart();
+    this.tui.requestRender();
+  }
+
+  /** Re-read the current file (watch mode), keeping the scroll position
+   *  clamped to the new content height. */
+  reload(): void {
+    this.contentStamp++;
+    this.body.setText(this.currentContent());
+    this.body.invalidate();
+    this.scrollView.scrollTo(Math.min(this.scrollView.scrollTop, Math.max(0, this.lastContentHeight - this.scrollView.viewportHeight)));
     this.tui.requestRender();
   }
 
@@ -363,14 +438,22 @@ export class Viewer implements Component {
     else if (matchesKey(data, Key.up) || data === "k") viewport.scrollBy(-1);
     else if (matchesKey(data, "ctrl+d") || data === "d") viewport.scrollBy(10);
     else if (matchesKey(data, "ctrl+u") || data === "u") viewport.scrollBy(-10);
+    else if (matchesKey(data, "ctrl+f")) viewport.scrollBy(this.scrollView.viewportHeight || 10);
+    else if (matchesKey(data, "ctrl+b")) viewport.scrollBy(-(this.scrollView.viewportHeight || 10));
+    else if (matchesKey(data, "ctrl+e")) viewport.scrollBy(1);
+    else if (matchesKey(data, "ctrl+y")) viewport.scrollBy(-1);
     else if (matchesKey(data, Key.right) || data === "l") this.nextFile();
     else if (matchesKey(data, Key.left) || data === "h") this.prevFile();
     else if (data === "G") this.scrollView.scrollToEnd();
     else if (data === "g") this.pendingG = true;
     else if (data === "/") this.openBarSearch();
+    else if (data === "t") this.openBarTOC();
     else if (data === "n") this.nextFile();
     else if (data === "p") this.prevFile();
     else if (data === "o") this.onOpenFile(this.state.files[this.state.index]!);
+    else if (data === "E" && this.state.files[this.state.index] !== "(stdin)") {
+      this.onEdit(this.state.files[this.state.index]!);
+    }
     else if (data === "?") this.toggleKeys();
     else if (data === "q" || matchesKey(data, "ctrl+c") || matchesKey(data, "esc")) {
       this.quitNow();
@@ -381,9 +464,6 @@ export class Viewer implements Component {
   }
 
   render(width: number): string[] {
-    this.lastWidth = width;
-    const lines = this.body.render(width);
-    this.lastContentHeight = lines.length;
     return this.root.render(width);
   }
 

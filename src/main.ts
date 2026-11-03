@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync, watch } from "node:fs";
 import { resolve } from "node:path";
 import {
   ProcessTerminal,
@@ -12,7 +12,8 @@ import {
 import { Viewer, asViewport, type ViewerState } from "./viewer";
 import { BarStack, fuzzyRows } from "./barstack";
 import { loadConfig } from "./config";
-import { applyPalette } from "./ui";
+import { applyPalette, applyScheme } from "./ui";
+import { setMarkdownScheme } from "./theme";
 
 const MD_EXT = /\.(md|markdown|mdx)$/i;
 
@@ -59,6 +60,21 @@ Usage:
   const tui = asViewport(new TuiAltScreen(terminal));
 
   const cfg = await loadConfig();
+
+  // Detect the terminal's background color (OSC 11) once and pick a readable
+  // palette. Explicit config colors win: applyPalette runs after detection.
+  try {
+    const colors = await tui.queryTerminalColors({ timeoutMs: 200 });
+    const bg = colors.background;
+    if (bg) {
+      const luma = 0.299 * bg.r + 0.587 * bg.g + 0.114 * bg.b;
+      const scheme = luma > 128 ? "light" : "dark";
+      applyScheme(scheme);
+      setMarkdownScheme(scheme);
+    }
+  } catch {
+    // Terminal didn't answer; keep the dark defaults.
+  }
   applyPalette(cfg);
 
   const quit = () => tui.stop();
@@ -171,8 +187,48 @@ Usage:
     pickerOverlay = tui.showOverlay(picker, { anchor: "bottom-left" });
   };
 
-  viewer = new Viewer({ tui, state, cfg, onQuit: quit, onOpenFile: showPicker });
+  const onEdit = async (file: string) => {
+    const editor = cfg.editor ?? process.env.EDITOR ?? "vi";
+    tui.stop();
+    try {
+      await Bun.spawn([editor, file], { stdin: "inherit", stdout: "inherit", stderr: "inherit" }).exited;
+    } catch {
+      // Editor failed to launch; restarting the TUI still restores the view.
+    }
+    try {
+      state.contents.set(file, readFileSync(file, "utf8"));
+    } catch {
+      // keep the previous content
+    }
+    viewer.reload();
+    tui.start();
+  };
+
+  viewer = new Viewer({ tui, state, cfg, onQuit: quit, onOpenFile: showPicker, onEdit });
   tui.setFocus(viewer);
+
+  // Watch mode: reload the viewed file when it changes on disk.
+  // 120 ms debounce absorbs editor save bursts (atomic rename etc.).
+  const reloadTimers = new Map<string, Timer>();
+  for (const f of state.files) {
+    if (f === "(stdin)") continue;
+    watch(f, { persistent: false }, () => {
+      const pending = reloadTimers.get(f);
+      if (pending) clearTimeout(pending);
+      reloadTimers.set(
+        f,
+        setTimeout(() => {
+          reloadTimers.delete(f);
+          try {
+            state.contents.set(f, readFileSync(f, "utf8"));
+          } catch {
+            return; // file vanished mid-write; keep showing the last version
+          }
+          if (state.files[state.index] === f) viewer.reload();
+        }, 120),
+      );
+    });
+  }
 
   if (startPicker) {
     const picker = barPicker(
