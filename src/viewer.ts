@@ -438,6 +438,10 @@ export class Viewer implements Component {
     else if (matchesKey(data, Key.up) || data === "k") viewport.scrollBy(-1);
     else if (matchesKey(data, "ctrl+d") || data === "d") viewport.scrollBy(10);
     else if (matchesKey(data, "ctrl+u") || data === "u") viewport.scrollBy(-10);
+    else if (matchesKey(data, "ctrl+f")) viewport.scrollBy(this.scrollView.viewportHeight || 10);
+    else if (matchesKey(data, "ctrl+b")) viewport.scrollBy(-(this.scrollView.viewportHeight || 10));
+    else if (matchesKey(data, "ctrl+e")) viewport.scrollBy(1);
+    else if (matchesKey(data, "ctrl+y")) viewport.scrollBy(-1);
     else if (matchesKey(data, Key.right) || data === "l") this.nextFile();
     else if (matchesKey(data, Key.left) || data === "h") this.prevFile();
     else if (data === "G") this.scrollView.scrollToEnd();
