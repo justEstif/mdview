@@ -46,8 +46,12 @@ bun install -g .
 | `/`                          | search — results stack above the bar, enter jumps to the line |
 | `t`                          | table of contents — filter headings, enter jumps |
 | `o`                          | open file picker                      |
+| `E`                          | open the file in your editor          |
 | `?`                          | swap status bar: tabs ↔ keymap         |
 | `q`, `Esc`, `Ctrl+C`         | quit                                  |
+
+`E` opens the current file in `"editor"` from the config, then `$EDITOR`,
+then `vi`; the view reloads when the editor exits. Not available for stdin.
 
 The status bar shows an open-file tab strip with the scroll position; `?`
 swaps it for a keymap line. It can be disabled with `"statusBar": false`.

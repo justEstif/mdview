@@ -20,6 +20,8 @@ export interface MdviewConfig {
   /** Palette overrides for ui.accent / ui.dim colors (ANSI 256 codes) */
   accentColor?: number;
   dimColor?: number;
+  /** Editor opened by `E` (default: $EDITOR, then vi) */
+  editor?: string;
 }
 
 const CONFIG_PATH = join(homedir(), ".config", "mdview", "config.json");

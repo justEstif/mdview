@@ -2,5 +2,6 @@
   "center": true,
   "paddingX": 1,
   "paddingY": 1,
-  "statusBar": true
+  "statusBar": true,
+  "editor": "vi"
 }

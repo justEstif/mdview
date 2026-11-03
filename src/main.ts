@@ -187,7 +187,24 @@ Usage:
     pickerOverlay = tui.showOverlay(picker, { anchor: "bottom-left" });
   };
 
-  viewer = new Viewer({ tui, state, cfg, onQuit: quit, onOpenFile: showPicker });
+  const onEdit = async (file: string) => {
+    const editor = cfg.editor ?? process.env.EDITOR ?? "vi";
+    tui.stop();
+    try {
+      await Bun.spawn([editor, file], { stdin: "inherit", stdout: "inherit", stderr: "inherit" }).exited;
+    } catch {
+      // Editor failed to launch; restarting the TUI still restores the view.
+    }
+    try {
+      state.contents.set(file, readFileSync(file, "utf8"));
+    } catch {
+      // keep the previous content
+    }
+    viewer.reload();
+    tui.start();
+  };
+
+  viewer = new Viewer({ tui, state, cfg, onQuit: quit, onOpenFile: showPicker, onEdit });
   tui.setFocus(viewer);
 
   // Watch mode: reload the viewed file when it changes on disk.

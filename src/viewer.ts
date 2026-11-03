@@ -193,7 +193,7 @@ class StatusBar implements Component {
 
   render(width: number): string[] {
     const keys =
-      " jk↓↑ scroll · du·10 · ^f^b page · ^e^y line · ggG ends · hl/np files · o pick · / find · t toc · q quit ";
+      " jk↓↑ scroll · du·10 · ^f^b page · ^e^y line · ggG ends · hl/np files · o pick · E edit · / find · t toc · q quit ";
     if (this.showKeys) {
       return [this.tier(width, keys, " ? close ", 236, 250)];
     }
@@ -215,6 +215,7 @@ export class Viewer implements Component {
   private cfg: MdviewConfig;
   private onQuit: () => void;
   private onOpenFile: (file: string) => void;
+  private onEdit: (file: string) => void;
   private pendingG = false;
 
   constructor(opts: {
@@ -223,12 +224,14 @@ export class Viewer implements Component {
     cfg: MdviewConfig;
     onQuit: () => void;
     onOpenFile: (file: string) => void;
+    onEdit?: (file: string) => void;
   }) {
     this.tui = asViewport(opts.tui);
     this.state = opts.state;
     this.cfg = opts.cfg;
     this.onQuit = opts.onQuit;
     this.onOpenFile = opts.onOpenFile;
+    this.onEdit = opts.onEdit ?? (() => {});
     this.body = new MarkdownBody(this.currentContent(), this.cfg, this.currentBaseDir(), (h, w) => {
       this.lastContentHeight = h;
       this.lastWidth = w;
@@ -444,6 +447,9 @@ export class Viewer implements Component {
     else if (data === "n") this.nextFile();
     else if (data === "p") this.prevFile();
     else if (data === "o") this.onOpenFile(this.state.files[this.state.index]!);
+    else if (data === "E" && this.state.files[this.state.index] !== "(stdin)") {
+      this.onEdit(this.state.files[this.state.index]!);
+    }
     else if (data === "?") this.toggleKeys();
     else if (data === "q" || matchesKey(data, "ctrl+c") || matchesKey(data, "esc")) {
       this.quitNow();
