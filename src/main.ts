@@ -60,22 +60,28 @@ Usage:
   const tui = asViewport(new TuiAltScreen(terminal));
 
   const cfg = await loadConfig();
+  applyPalette(cfg);
 
   // Detect the terminal's background color (OSC 11) once and pick a readable
-  // palette. Explicit config colors win: applyPalette runs after detection.
-  try {
-    const colors = await tui.queryTerminalColors({ timeoutMs: 200 });
-    const bg = colors.background;
-    if (bg) {
+  // palette. Runs after tui.start(): raw mode must be on so the terminal's
+  // reply is parsed instead of echoed, and explicit config colors win because
+  // applyPalette runs again afterwards.
+  const detectScheme = async (viewer?: Viewer) => {
+    try {
+      const colors = await tui.queryTerminalColors({ timeoutMs: 200 });
+      const bg = colors.background;
+      if (!bg) return;
       const luma = 0.299 * bg.r + 0.587 * bg.g + 0.114 * bg.b;
       const scheme = luma > 128 ? "light" : "dark";
       applyScheme(scheme);
       setMarkdownScheme(scheme);
+      applyPalette(cfg);
+      if (viewer) viewer.reload();
+      else tui.requestRender();
+    } catch {
+      // Terminal didn't answer; keep the dark defaults.
     }
-  } catch {
-    // Terminal didn't answer; keep the dark defaults.
-  }
-  applyPalette(cfg);
+  };
 
   const quit = () => tui.stop();
 
@@ -150,6 +156,7 @@ Usage:
     tui.setLayoutRoot(empty);
     tui.setFocus(empty);
     tui.start();
+    void detectScheme();
     return;
   }
 
@@ -252,6 +259,7 @@ Usage:
   }
 
   tui.start();
+  void detectScheme(viewer);
 }
 
 main().catch((err) => {
