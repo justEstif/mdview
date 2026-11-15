@@ -40,7 +40,14 @@ function put(map: Map<string, number>, slug: string, line: number): void {
  * @param rawLines      the raw markdown source lines
  * @param renderedPlain the rendered lines with styling stripped (Viewer.renderedPlain)
  */
-export function buildAnchorMap(rawLines: string[], renderedPlain: string[]): Map<string, number> {
+export function buildAnchorMap(
+  rawLines: string[],
+  renderedPlain: string[],
+  /** Styled (pre-strip) rendered lines; link-bearing lines are skipped when
+   *  matching heading titles so a standalone `[Title](#title)` line whose text
+   *  equals the heading cannot shadow the real heading. */
+  renderedStyled?: string[],
+): Map<string, number> {
   const map = new Map<string, number>();
 
   ANCHOR_ID_RE.lastIndex = 0;
@@ -49,7 +56,10 @@ export function buildAnchorMap(rawLines: string[], renderedPlain: string[]): Map
   }
 
   let from = 0;
-  for (const line of rawLines) {
+  // CRLF sources: strip the trailing \r so `# Title\r` still matches HEADING_RE
+  // (rendering itself is unaffected; this is scan-only normalization).
+  for (const raw of rawLines) {
+    const line = raw.replace(/\r$/, "");
     const m = line.match(HEADING_RE);
     if (!m) continue;
     const title = m[2]!.replace(/[`*_[\]]/g, "").trim();
@@ -57,7 +67,14 @@ export function buildAnchorMap(rawLines: string[], renderedPlain: string[]): Map
     // Require an exact heading line: a rendered heading is the styled title
     // alone on its line, whereas link text with the same words appears inside
     // a sentence (`See [Intro](#intro) below.` renders as "See Intro below.").
-    const idx = renderedPlain.findIndex((l, i) => i >= from && l.trim() === title);
+    // Also require the line not to be an OSC-8 hyperlink (a link whose text
+    // equals the title); real heading lines never carry link escapes.
+    const idx = renderedPlain.findIndex(
+      (l, i) =>
+        i >= from &&
+        l.trim() === title &&
+        !(renderedStyled?.[i] && renderedStyled[i]!.includes("\x1b]8;")),
+    );
     if (idx < 0) continue;
     put(map, githubSlug(title), idx);
     from = idx + 1;

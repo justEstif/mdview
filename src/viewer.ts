@@ -56,6 +56,25 @@ type Segment =
   | { type: "md"; text: string; component: Markdown }
   | { type: "img"; component: Image | Markdown };
 
+/** ScrollView that can defer a jump target until the next layout pass,
+ *  when `contentHeight` reflects the newly shown file. `ScrollView.scrollTo`
+ *  clamps against the stale height right after `showFile`, so a fragment
+ *  jump (`./doc.md#section` into a longer doc) would clamp to 0 and the
+ *  later layout pass would keep it there. Applying the pending target from
+ *  `updateLayout` runs after the clamp bounds are fresh, in the same frame. */
+export class AnchoredScrollView extends ScrollView {
+  pendingJump: number | null = null;
+
+  override updateLayout(contentHeight: number, viewportHeight: number, requestRender: () => void): void {
+    super.updateLayout(contentHeight, viewportHeight, requestRender);
+    if (this.pendingJump !== null) {
+      const target = this.pendingJump;
+      this.pendingJump = null;
+      this.scrollTo(target);
+    }
+  }
+}
+
 /** Scrollable markdown body with inline image support (kitty/iterm2).
  *  Falls back to plain markdown (alt text link) when the terminal can't show
  *  images or the file can't be read. */
@@ -215,7 +234,7 @@ class StatusBar implements Component {
 export class Viewer implements Component {
   private state: ViewerState;
   private body: MarkdownBody;
-  private scrollView: ScrollView;
+  private scrollView: AnchoredScrollView;
   private root: VStack;
   private tui: ViewportTui;
   private cfg: MdviewConfig;
@@ -243,7 +262,7 @@ export class Viewer implements Component {
       this.lastWidth = w;
     });
     // The primary ScrollView is what TuiAltScreen.scrollBy() actually scrolls.
-    this.scrollView = new ScrollView(this.body, { primary: true, follow: "none" });
+    this.scrollView = new AnchoredScrollView(this.body, { primary: true, follow: "none" });
     const status: StatusBar = new StatusBar(this.state, () => ({
       top: this.scrollView.scrollTop,
       viewportHeight: this.scrollView.viewportHeight,
@@ -266,9 +285,20 @@ export class Viewer implements Component {
   private searchOverlay: ReturnType<ViewportTui["showOverlay"]> | null = null;
   private lastWidth = 80;
   private plainCache: { key: string; lines: string[] } | null = null;
+  private styledCache: { key: string; lines: string[] } | null = null;
   private anchorCache: { key: string; map: Map<string, number> } | null = null;
   /** Bumped whenever the body content changes, keying the search cache. */
   private contentStamp = 0;
+
+  /** Rendered body lines with styling kept — lets the anchor matcher skip
+   *  link-bearing lines whose text equals a heading title. */
+  private renderedStyled(): string[] {
+    const key = `${this.state.index}:${this.contentStamp}:${this.lastWidth}`;
+    if (this.styledCache?.key === key) return this.styledCache.lines;
+    const lines = this.body.render(this.lastWidth);
+    this.styledCache = { key, lines };
+    return lines;
+  }
 
   /** Rendered body lines with styling stripped — what `/` searches. */
   private renderedPlain(): string[] {
@@ -276,7 +306,7 @@ export class Viewer implements Component {
     if (this.plainCache?.key === key) return this.plainCache.lines;
     const strip = (l: string) =>
       l.replace(/\x1b\[[0-9;]*m/g, "").replace(/\x1b\]8;;[^\x1b]*\x1b\\/g, "");
-    const lines = this.body.render(this.lastWidth).map(strip);
+    const lines = this.renderedStyled().map(strip);
     this.plainCache = { key, lines };
     return lines;
   }
@@ -285,7 +315,7 @@ export class Viewer implements Component {
   private anchorMap(): Map<string, number> {
     const key = `${this.state.index}:${this.contentStamp}:${this.lastWidth}`;
     if (this.anchorCache?.key === key) return this.anchorCache.map;
-    const map = buildAnchorMap(this.currentContent().split("\n"), this.renderedPlain());
+    const map = buildAnchorMap(this.currentContent().split("\n"), this.renderedPlain(), this.renderedStyled());
     this.anchorCache = { key, map };
     return map;
   }
@@ -307,6 +337,10 @@ export class Viewer implements Component {
       this.flashStatus(`no anchor: #${id}`);
       return false;
     }
+    // Set the deferred target first: right after showFile the ScrollView still
+    // holds the previous file's contentHeight, so the immediate scrollTo clamps
+    // low; the next layout pass re-applies the target against fresh bounds.
+    this.scrollView.pendingJump = line;
     this.scrollView.scrollTo(line);
     this.tui.requestRender();
     return true;
@@ -406,7 +440,8 @@ export class Viewer implements Component {
     const plain = this.renderedPlain();
     const items: { line: number; label: string }[] = [];
     let from = 0;
-    for (const line of this.currentContent().split("\n")) {
+    for (const rawLine of this.currentContent().split("\n")) {
+      const line = rawLine.replace(/\r$/, ""); // CRLF sources
       const m = line.match(/^ {0,3}(#{1,6})\s+(.*?)(?:\s+#+\s*)?$/);
       if (!m) continue;
       const title = m[2]!.replace(/[`*_[\]]/g, "").trim();
