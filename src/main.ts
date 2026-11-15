@@ -57,7 +57,13 @@ Usage:
   }
 
   const terminal = new ProcessTerminal();
-  const tui = asViewport(new TuiAltScreen(terminal));
+  // `viewer` is assigned before tui.start(), so the closure is safe.
+  const tui = asViewport(
+    new TuiAltScreen(terminal, undefined, undefined, {
+      mouse: true,
+      openUrl: (url: string) => viewer?.handleLinkClick(url),
+    }),
+  );
 
   const cfg = await loadConfig();
   applyPalette(cfg);

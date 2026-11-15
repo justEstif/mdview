@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { readFileSync } from "node:fs";
 import {
@@ -14,6 +15,7 @@ import {
   type TUI,
 } from "@earendil-works/pi-tui";
 import { markdownTheme } from "./theme";
+import { buildAnchorMap } from "./anchors";
 import { BarStack, type BarItem } from "./barstack";
 import { ui, visibleWidth } from "./ui";
 import type { MdviewConfig } from "./config";
@@ -144,6 +146,8 @@ class MarkdownBody implements Component {
 class StatusBar implements Component {
   /** Toggled by `?`: show the keymap line in place of the tab strip. */
   showKeys = false;
+  /** Transient message (unknown anchor, missing file); replaces the tab strip. */
+  message: string | null = null;
 
   constructor(
     private readonly state: ViewerState,
@@ -196,6 +200,9 @@ class StatusBar implements Component {
       " jk↓↑ scroll · du·10 · ^f^b page · ^e^y line · ggG ends · hl/np files · o pick · E edit · / find · t toc · q quit ";
     if (this.showKeys) {
       return [this.tier(width, keys, " ? close ", 236, 250)];
+    }
+    if (this.message) {
+      return [this.tier(width, ` ${this.message}`, "", 52, 234)];
     }
     const { files, index } = this.state;
     const pos = this.position();
@@ -260,6 +267,7 @@ export class Viewer implements Component {
   private searchOverlay: ReturnType<ViewportTui["showOverlay"]> | null = null;
   private lastWidth = 80;
   private plainCache: { key: string; lines: string[] } | null = null;
+  private anchorCache: { key: string; map: Map<string, number> } | null = null;
   /** Bumped whenever the body content changes, keying the search cache. */
   private contentStamp = 0;
 
@@ -272,6 +280,72 @@ export class Viewer implements Component {
     const lines = this.body.render(this.lastWidth).map(strip);
     this.plainCache = { key, lines };
     return lines;
+  }
+
+  /** Anchor id → rendered line index for the current file (cached like the search cache). */
+  private anchorMap(): Map<string, number> {
+    const key = `${this.state.index}:${this.contentStamp}:${this.lastWidth}`;
+    if (this.anchorCache?.key === key) return this.anchorCache.map;
+    const map = buildAnchorMap(this.currentContent().split("\n"), this.renderedPlain());
+    this.anchorCache = { key, map };
+    return map;
+  }
+
+  /** Show a transient message in the status bar. */
+  flashStatus(msg: string): void {
+    this.status.message = msg;
+    this.tui.requestRender();
+    setTimeout(() => {
+      this.status.message = null;
+      this.tui.requestRender();
+    }, 2500);
+  }
+
+  /** Jump to an in-document anchor (`#id` links); unknown ids flash a message. */
+  jumpToAnchor(id: string): boolean {
+    const line = this.anchorMap().get(id);
+    if (line === undefined) {
+      this.flashStatus(`no anchor: #${id}`);
+      return false;
+    }
+    this.scrollView.scrollTo(line);
+    this.tui.requestRender();
+    return true;
+  }
+
+  /** Route an OSC-8 link click: `#anchor` jumps in-document, relative `.md`
+   *  opens in the viewer, everything else goes to the system opener. */
+  handleLinkClick(href: string): void {
+    if (href.startsWith("#")) {
+      this.jumpToAnchor(href.slice(1));
+      return;
+    }
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href)) {
+      openExternal(href);
+      return;
+    }
+    this.openRelativeDoc(href);
+  }
+
+  /** Open a relative link target against the current file's directory. */
+  private openRelativeDoc(href: string): void {
+    const path = href.split("#")[0]!;
+    const full = resolve(this.currentBaseDir(), decodeURIComponent(path));
+    if (/\.(md|markdown|mdx)$/i.test(full) && existsSync(full)) {
+      let idx = this.state.files.indexOf(full);
+      if (idx < 0) {
+        this.state.files.push(full);
+        idx = this.state.files.length - 1;
+      }
+      this.state.contents.set(full, readFileSync(full, "utf8"));
+      this.showFile(idx);
+      return;
+    }
+    if (!existsSync(full)) {
+      this.flashStatus(`not found: ${href}`);
+      return;
+    }
+    openExternal(full);
   }
 
   /** `/` — results stack above a bar-anchored input; enter jumps to the line. */
@@ -469,5 +543,15 @@ export class Viewer implements Component {
 
   invalidate(): void {
     this.body.invalidate();
+  }
+}
+
+/** Open a URL or non-markdown file with the system opener (best-effort). */
+function openExternal(target: string): void {
+  const opener = process.env.XDG_OPEN ?? "xdg-open";
+  try {
+    Bun.spawn([opener, target], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+  } catch {
+    // Best-effort: a missing opener just means nothing happens.
   }
 }
