@@ -28,10 +28,20 @@ describe("buildAnchorMap", () => {
   const plain = renderedPlain(fixture);
   const map = buildAnchorMap(fixture.split("\n"), plain);
 
-  test("heading slug resolves to the rendered heading line", () => {
+  test("heading slug resolves to the exact rendered heading line", () => {
     const line = map.get("sources");
     expect(line).toBeDefined();
-    expect(plain[line!]).toContain("Sources");
+    expect(line).toBe(plain.findIndex((l) => l.trim() === "Sources"));
+    expect(plain[line!]!.trim()).toBe("Sources");
+  });
+
+  test("link text equal to a heading title does not shadow the heading", () => {
+    const doc = "# Top\nSee [Intro](#intro) below.\n# Intro";
+    const plain2 = renderedPlain(doc);
+    const map2 = buildAnchorMap(doc.split("\n"), plain2);
+    const line = map2.get("intro");
+    expect(line).toBeDefined();
+    expect(line).toBe(plain2.findIndex((l) => l.trim() === "Intro"));
   });
 
   test("duplicate headings get GitHub-style -1 suffix", () => {

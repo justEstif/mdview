@@ -54,7 +54,10 @@ export function buildAnchorMap(rawLines: string[], renderedPlain: string[]): Map
     if (!m) continue;
     const title = m[2]!.replace(/[`*_[\]]/g, "").trim();
     if (!title) continue;
-    const idx = renderedPlain.findIndex((l, i) => i >= from && l.includes(title));
+    // Require an exact heading line: a rendered heading is the styled title
+    // alone on its line, whereas link text with the same words appears inside
+    // a sentence (`See [Intro](#intro) below.` renders as "See Intro below.").
+    const idx = renderedPlain.findIndex((l, i) => i >= from && l.trim() === title);
     if (idx < 0) continue;
     put(map, githubSlug(title), idx);
     from = idx + 1;
