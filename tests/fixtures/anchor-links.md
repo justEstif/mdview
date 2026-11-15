@@ -6,6 +6,7 @@ Try clicking each link:
 - [Explicit anchor](#explicit-target) — `<a id>` style anchor
 - [What's New?](#whats-new) — heading slug with punctuation
 - [Second doc](./linked.md) — relative markdown link
+- [Linked section](./linked.md#linked-target) — relative link with a fragment
 - [Example site](https://example.com) — external http link
 
 <a id="explicit-target"></a>Explicit anchor target line.
