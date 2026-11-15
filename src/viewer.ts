@@ -1,6 +1,5 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
-import { readFileSync } from "node:fs";
 import {
   Image,
   Key,
@@ -327,11 +326,15 @@ export class Viewer implements Component {
     this.openRelativeDoc(href);
   }
 
-  /** Open a relative link target against the current file's directory. */
+  /** Open a relative link target against the current file's directory.
+   *  `./doc.md#section` loads the file then jumps to the section. */
   private openRelativeDoc(href: string): void {
-    const path = href.split("#")[0]!;
-    const full = resolve(this.currentBaseDir(), decodeURIComponent(path));
-    if (/\.(md|markdown|mdx)$/i.test(full) && existsSync(full)) {
+    const [path, fragment] = href.split("#");
+    const target = resolve(this.currentBaseDir(), decodeURIComponent(path!));
+    if (/\.(md|markdown|mdx)$/i.test(target) && existsSync(target)) {
+      // Normalize so variant spellings (`./linked.md`, `a/../linked.md`)
+      // reuse the same tab instead of growing the file list.
+      const full = realpathSync(target);
       let idx = this.state.files.indexOf(full);
       if (idx < 0) {
         this.state.files.push(full);
@@ -339,13 +342,14 @@ export class Viewer implements Component {
       }
       this.state.contents.set(full, readFileSync(full, "utf8"));
       this.showFile(idx);
+      if (fragment) this.jumpToAnchor(fragment);
       return;
     }
-    if (!existsSync(full)) {
+    if (!existsSync(target)) {
       this.flashStatus(`not found: ${href}`);
       return;
     }
-    openExternal(full);
+    openExternal(target);
   }
 
   /** `/` — results stack above a bar-anchored input; enter jumps to the line. */
