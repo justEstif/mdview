@@ -1,5 +1,5 @@
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
-import { readFileSync } from "node:fs";
 import {
   Image,
   Key,
@@ -14,6 +14,7 @@ import {
   type TUI,
 } from "@earendil-works/pi-tui";
 import { markdownTheme } from "./theme";
+import { buildAnchorMap } from "./anchors";
 import { BarStack, type BarItem } from "./barstack";
 import { ui, visibleWidth } from "./ui";
 import type { MdviewConfig } from "./config";
@@ -54,6 +55,25 @@ const MIME_BY_EXT: Record<string, string> = {
 type Segment =
   | { type: "md"; text: string; component: Markdown }
   | { type: "img"; component: Image | Markdown };
+
+/** ScrollView that can defer a jump target until the next layout pass,
+ *  when `contentHeight` reflects the newly shown file. `ScrollView.scrollTo`
+ *  clamps against the stale height right after `showFile`, so a fragment
+ *  jump (`./doc.md#section` into a longer doc) would clamp to 0 and the
+ *  later layout pass would keep it there. Applying the pending target from
+ *  `updateLayout` runs after the clamp bounds are fresh, in the same frame. */
+export class AnchoredScrollView extends ScrollView {
+  pendingJump: number | null = null;
+
+  override updateLayout(contentHeight: number, viewportHeight: number, requestRender: () => void): void {
+    super.updateLayout(contentHeight, viewportHeight, requestRender);
+    if (this.pendingJump !== null) {
+      const target = this.pendingJump;
+      this.pendingJump = null;
+      this.scrollTo(target);
+    }
+  }
+}
 
 /** Scrollable markdown body with inline image support (kitty/iterm2).
  *  Falls back to plain markdown (alt text link) when the terminal can't show
@@ -144,6 +164,8 @@ class MarkdownBody implements Component {
 class StatusBar implements Component {
   /** Toggled by `?`: show the keymap line in place of the tab strip. */
   showKeys = false;
+  /** Transient message (unknown anchor, missing file); replaces the tab strip. */
+  message: string | null = null;
 
   constructor(
     private readonly state: ViewerState,
@@ -197,6 +219,9 @@ class StatusBar implements Component {
     if (this.showKeys) {
       return [this.tier(width, keys, " ? close ", 236, 250)];
     }
+    if (this.message) {
+      return [this.tier(width, ` ${this.message}`, "", 52, 234)];
+    }
     const { files, index } = this.state;
     const pos = this.position();
     const count = files.length > 4 ? `${index + 1}/${files.length} · ` : "";
@@ -209,7 +234,7 @@ class StatusBar implements Component {
 export class Viewer implements Component {
   private state: ViewerState;
   private body: MarkdownBody;
-  private scrollView: ScrollView;
+  private scrollView: AnchoredScrollView;
   private root: VStack;
   private tui: ViewportTui;
   private cfg: MdviewConfig;
@@ -237,7 +262,7 @@ export class Viewer implements Component {
       this.lastWidth = w;
     });
     // The primary ScrollView is what TuiAltScreen.scrollBy() actually scrolls.
-    this.scrollView = new ScrollView(this.body, { primary: true, follow: "none" });
+    this.scrollView = new AnchoredScrollView(this.body, { primary: true, follow: "none" });
     const status: StatusBar = new StatusBar(this.state, () => ({
       top: this.scrollView.scrollTop,
       viewportHeight: this.scrollView.viewportHeight,
@@ -260,8 +285,20 @@ export class Viewer implements Component {
   private searchOverlay: ReturnType<ViewportTui["showOverlay"]> | null = null;
   private lastWidth = 80;
   private plainCache: { key: string; lines: string[] } | null = null;
+  private styledCache: { key: string; lines: string[] } | null = null;
+  private anchorCache: { key: string; map: Map<string, number> } | null = null;
   /** Bumped whenever the body content changes, keying the search cache. */
   private contentStamp = 0;
+
+  /** Rendered body lines with styling kept — lets the anchor matcher skip
+   *  link-bearing lines whose text equals a heading title. */
+  private renderedStyled(): string[] {
+    const key = `${this.state.index}:${this.contentStamp}:${this.lastWidth}`;
+    if (this.styledCache?.key === key) return this.styledCache.lines;
+    const lines = this.body.render(this.lastWidth);
+    this.styledCache = { key, lines };
+    return lines;
+  }
 
   /** Rendered body lines with styling stripped — what `/` searches. */
   private renderedPlain(): string[] {
@@ -269,9 +306,84 @@ export class Viewer implements Component {
     if (this.plainCache?.key === key) return this.plainCache.lines;
     const strip = (l: string) =>
       l.replace(/\x1b\[[0-9;]*m/g, "").replace(/\x1b\]8;;[^\x1b]*\x1b\\/g, "");
-    const lines = this.body.render(this.lastWidth).map(strip);
+    const lines = this.renderedStyled().map(strip);
     this.plainCache = { key, lines };
     return lines;
+  }
+
+  /** Anchor id → rendered line index for the current file (cached like the search cache). */
+  private anchorMap(): Map<string, number> {
+    const key = `${this.state.index}:${this.contentStamp}:${this.lastWidth}`;
+    if (this.anchorCache?.key === key) return this.anchorCache.map;
+    const map = buildAnchorMap(this.currentContent().split("\n"), this.renderedPlain(), this.renderedStyled());
+    this.anchorCache = { key, map };
+    return map;
+  }
+
+  /** Show a transient message in the status bar. */
+  flashStatus(msg: string): void {
+    this.status.message = msg;
+    this.tui.requestRender();
+    setTimeout(() => {
+      this.status.message = null;
+      this.tui.requestRender();
+    }, 2500);
+  }
+
+  /** Jump to an in-document anchor (`#id` links); unknown ids flash a message. */
+  jumpToAnchor(id: string): boolean {
+    const line = this.anchorMap().get(id);
+    if (line === undefined) {
+      this.flashStatus(`no anchor: #${id}`);
+      return false;
+    }
+    // Set the deferred target first: right after showFile the ScrollView still
+    // holds the previous file's contentHeight, so the immediate scrollTo clamps
+    // low; the next layout pass re-applies the target against fresh bounds.
+    this.scrollView.pendingJump = line;
+    this.scrollView.scrollTo(line);
+    this.tui.requestRender();
+    return true;
+  }
+
+  /** Route an OSC-8 link click: `#anchor` jumps in-document, relative `.md`
+   *  opens in the viewer, everything else goes to the system opener. */
+  handleLinkClick(href: string): void {
+    if (href.startsWith("#")) {
+      this.jumpToAnchor(href.slice(1));
+      return;
+    }
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href)) {
+      openExternal(href);
+      return;
+    }
+    this.openRelativeDoc(href);
+  }
+
+  /** Open a relative link target against the current file's directory.
+   *  `./doc.md#section` loads the file then jumps to the section. */
+  private openRelativeDoc(href: string): void {
+    const [path, fragment] = href.split("#");
+    const target = resolve(this.currentBaseDir(), decodeURIComponent(path!));
+    if (/\.(md|markdown|mdx)$/i.test(target) && existsSync(target)) {
+      // Normalize so variant spellings (`./linked.md`, `a/../linked.md`)
+      // reuse the same tab instead of growing the file list.
+      const full = realpathSync(target);
+      let idx = this.state.files.indexOf(full);
+      if (idx < 0) {
+        this.state.files.push(full);
+        idx = this.state.files.length - 1;
+      }
+      this.state.contents.set(full, readFileSync(full, "utf8"));
+      this.showFile(idx);
+      if (fragment) this.jumpToAnchor(fragment);
+      return;
+    }
+    if (!existsSync(target)) {
+      this.flashStatus(`not found: ${href}`);
+      return;
+    }
+    openExternal(target);
   }
 
   /** `/` — results stack above a bar-anchored input; enter jumps to the line. */
@@ -328,7 +440,8 @@ export class Viewer implements Component {
     const plain = this.renderedPlain();
     const items: { line: number; label: string }[] = [];
     let from = 0;
-    for (const line of this.currentContent().split("\n")) {
+    for (const rawLine of this.currentContent().split("\n")) {
+      const line = rawLine.replace(/\r$/, ""); // CRLF sources
       const m = line.match(/^ {0,3}(#{1,6})\s+(.*?)(?:\s+#+\s*)?$/);
       if (!m) continue;
       const title = m[2]!.replace(/[`*_[\]]/g, "").trim();
@@ -469,5 +582,15 @@ export class Viewer implements Component {
 
   invalidate(): void {
     this.body.invalidate();
+  }
+}
+
+/** Open a URL or non-markdown file with the system opener (best-effort). */
+function openExternal(target: string): void {
+  const opener = process.env.XDG_OPEN ?? "xdg-open";
+  try {
+    Bun.spawn([opener, target], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+  } catch {
+    // Best-effort: a missing opener just means nothing happens.
   }
 }
